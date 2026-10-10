@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f3e8">
+  <meta name="description" content="Monitor data pipeline health, detect failures, and surface bottlenecks.">
+  <title>PipelineIQ — Reliability dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="PipelineIQ home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M5 22.5h5.5l3.2-13 4.6 17 3.1-11h5.6" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="22.5" r="2" fill="currentColor"/><circle cx="27" cy="15.5" r="2" fill="currentColor"/></svg>
+        </span>
+        <span class="brand-name">Pipeline<span>IQ</span></span>
+      </a>
+
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="side-nav" role="tablist" aria-label="Main navigation">
+        <a class="nav-item active" id="tab-overview" href="#overview" role="tab" aria-selected="true" aria-controls="overview-view" data-tab="overview">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+          Overview
+        </a>
+        <a class="nav-item" id="tab-health" href="#task-health" role="tab" aria-selected="false" aria-controls="health-view" data-tab="health">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M6.5 16V9.5m5 6.5V5m5 11V11m-12 8.5h13"/></svg>
+          Task health
+        </a>
+        <a class="nav-item" id="tab-risk" href="#risk-analysis" role="tab" aria-selected="false" aria-controls="risk-view" data-tab="risk">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v4.5m0 3h.01"/></svg>
+          Risk analysis
+        </a>
+        <a class="nav-item" id="tab-quality" href="#data-quality" role="tab" aria-selected="false" aria-controls="quality-view" data-tab="quality">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v15H5zM8 9l2.2 2.2L15.5 6m-7.5 9h8"/></svg>
+          Data quality
+        </a>
+        <a class="nav-item" id="tab-performance" href="#performance" role="tab" aria-selected="false" aria-controls="performance-view" data-tab="performance">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M6 16V9.5m5 6.5V5m5 11V11m3 5V7"/></svg>
+          Performance
+        </a>
+        <a class="nav-item" id="tab-monitor" href="#monitoring" role="tab" aria-selected="false" aria-controls="monitor-view" data-tab="monitor">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 1 2.3 5.6M4 17v-5h5m3-7v7l4 2"/></svg>
+          Monitor &amp; recovery
+        </a>
+        <a class="nav-item" id="tab-reports" href="#reports" role="tab" aria-selected="false" aria-controls="reports-view" data-tab="reports">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4.5 4.5v12H6zM14 4v5h5m-9 4h5m-5 3h5"/></svg>
+          Reports
+        </a>
+        <a class="nav-item" id="tab-scheduler" href="#scheduler" role="tab" aria-selected="false" aria-controls="scheduler-view" data-tab="scheduler">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="15" rx="1"/><path d="M8 3.5v4m8-4v4M4 10h16m-8 3v3l2 1"/></svg>
+          Scheduler
+        </a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="help-card">
+          <span class="help-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.4a2.4 2.4 0 1 1 4.1 1.7c-1.2 1.1-1.8 1.4-1.8 2.7m0 2.4h.01"/></svg>
+          </span>
+          <strong>Need a hand?</strong>
+          <p>Upload your pipeline logs to get a clear picture of reliability.</p>
+          <a href="#data-source">Explore data sources <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="profile">
+          <div class="avatar">PD</div>
+          <div class="profile-copy"><strong>Pipeline Demo</strong><span>Local workspace</span></div>
+          <span class="profile-menu" aria-hidden="true">···</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>Workspace</span><span class="crumb-divider">/</span><strong>Overview</strong></div>
+        <div class="topbar-right">
+          <span class="system-status" id="system-status" role="status"><span class="status-dot"></span> Connecting…</span>
+          <button class="icon-button" id="refresh-button" type="button" aria-label="Run analysis" title="Run analysis">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-3L4 10m0-5v5h5m-5 3a8 8 0 0 0 14.8 3L20 14m0 5v-5h-5"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">PIPELINE OBSERVABILITY</p>
+          <h1>Good <span id="greeting-period">morning</span><span class="heading-period">.</span></h1>
+          <p class="page-subtitle">A clear view of your pipeline health, performance, and risks.</p>
+        </div>
+        <div class="heading-actions">
+          <span class="last-run" id="last-run">No analysis run yet</span>
+          <button class="button button-primary" id="run-analysis" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"/></svg>
+            Run analysis
+          </button>
+        </div>
+      </section>
+
+      <section class="source-panel" id="data-source" aria-labelledby="source-heading">
+        <div class="source-intro">
+          <span class="source-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/></svg>
+          </span>
+          <div>
+            <h2 id="source-heading">Choose your data source</h2>
+            <p>Analyze a CSV export or explore with a generated sample.</p>
+          </div>
+        </div>
+        <div class="source-controls">
+          <label class="file-picker" for="csv-file">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 3.5H6A1.5 1.5 0 0 0 4.5 5v14A1.5 1.5 0 0 0 6 20.5h12a1.5 1.5 0 0 0 1.5-1.5V9l-6-5.5Z"/><path d="M13 4v5h5m-8 5h5m-5 3h5"/></svg>
+            <span id="file-label">Choose CSV</span>
+            <input id="csv-file" type="file" accept=".csv,text/csv">
+          </label>
+          <span class="or-divider">or</span>
+          <label class="sample-select">
+            <span class="sr-only">Sample size</span>
+            <select id="sample-rows">
+              <option value="10000">10,000 sample rows</option>
+              <option value="30000" selected>30,000 sample rows</option>
+              <option value="50000">50,000 sample rows</option>
+              <option value="100000">100,000 sample rows</option>
+            </select>
+          </label>
+        </div>
+        <p class="source-note" id="source-note">CSV uploads support 500,000+ rows (up to 500 MB) and need timestamp, task_id, status, duration, cpu_usage, memory_usage, io_throughput, and latency.</p>
+      </section>
+
+      <div class="notice" id="notice" role="alert" aria-live="polite" hidden>
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div><strong id="notice-title">We couldn’t complete the analysis</strong><p id="notice-message"></p></div>
+        <button class="notice-close" id="notice-close" type="button" aria-label="Dismiss message">×</button>
+      </div>
+
+      <section class="loading-panel" id="loading-panel" aria-live="polite" hidden>
+        <span class="loader" aria-hidden="true"></span>
+        <div><strong>Analyzing your pipeline</strong><span>This can take a moment for larger datasets.</span></div>
+      </section>
+
+      <section class="tab-empty-state" id="health-empty" hidden>
+        <div class="welcome-visual" aria-hidden="true"><div class="visual-center"><svg viewBox="0 0 24 24"><path d="M4 19.5h16M6.5 16V9.5m5 6.5V5m5 11V11"/></svg></div></div>
+        <h2>Task health is ready</h2><p>Run an analysis to see run counts, failure rates, and average duration for each pipeline task.</p>
+        <button class="button button-primary" type="button" data-run-analysis>Run analysis</button>
+      </section>
+      <section class="tab-empty-state" id="risk-empty" hidden>
+        <div class="welcome-visual" aria-hidden="true"><div class="visual-center"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v4.5m0 3h.01"/></svg></div></div>
+        <h2>Risk analysis is ready</h2><p>Run an analysis to surface the pipeline runs most likely to become bottlenecks.</p>
+        <button class="button button-primary" type="button" data-run-analysis>Run analysis</button>
+      </section>
+      <section class="tab-empty-state" id="quality-empty" hidden>
+        <div class="welcome-visual" aria-hidden="true"><div class="visual-center"><svg viewBox="0 0 24 24"><path d="m5 12 4.2 4.2L19 6.5"/></svg></div></div>
+        <h2>Validate your data</h2><p>Run an analysis to inspect schema, missing values, duplicates, formats, and metric ranges.</p>
+        <button class="button button-primary" type="button" data-run-analysis>Run analysis</button>
+      </section>
+      <section class="tab-empty-state" id="performance-empty" hidden>
+        <div class="welcome-visual" aria-hidden="true"><div class="visual-center"><svg viewBox="0 0 24 24"><path d="M4 19.5h16M6 16V9.5m5 6.5V5m5 11V11"/></svg></div></div>
+        <h2>Measure pipeline performance</h2><p>Run an analysis to see execution duration, resource utilization, and historical performance trends.</p>
+        <button class="button button-primary" type="button" data-run-analysis>Run analysis</button>
+      </section>
+      <section class="tab-empty-state" id="monitor-empty" hidden>
+        <div class="welcome-visual" aria-hidden="true"><div class="visual-center"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.6M4 17v-5h5m3-7v7l4 2"/></svg></div></div>
+        <h2>Pipeline monitor</h2><p>Analyze a dataset or run the recovery simulation to populate recent execution and recovery events.</p>
+        <button class="button button-primary" type="button" data-run-analysis>Run analysis</button>
+      </section>
+
+      <section class="results" id="results" hidden>
+        <section class="tab-view" id="overview-view" data-tab-view="overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="section-heading">
+          <div><h2>Pipeline health</h2><p id="result-summary">Your latest analysis at a glance.</p></div>
+          <span class="source-badge" id="source-badge"></span>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <div class="metric-top"><span>Reliability score</span><span class="metric-icon mint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.5"/></svg></span></div>
+            <div class="metric-value" id="reliability-value">—</div>
+            <div class="metric-foot"><span class="metric-dot green"></span><span id="reliability-foot">Based on detected failures</span></div>
+            <div class="meter"><span id="reliability-meter"></span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Runs analyzed</span><span class="metric-icon lavender">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v13H5zM8 9h8m-8 3h8m-8 3h5"/></svg></span></div>
+            <div class="metric-value" id="runs-value">—</div>
+            <div class="metric-foot"><span class="metric-neutral" id="runs-foot">Clean records</span></div>
+            <div class="subtle-caption" id="raw-records"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Flagged runs</span><span class="metric-icon peach">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v4.5m0 3h.01"/></svg></span></div>
+            <div class="metric-value" id="flagged-value">—</div>
+            <div class="metric-foot"><span class="metric-neutral" id="flagged-foot">Failure or anomaly detected</span></div>
+            <div class="subtle-caption" id="flagged-rate"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Model F1 score</span><span class="metric-icon blue">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18.5 9 13l3.5 3.5L20 8"/><path d="M15 8h5v5"/></svg></span></div>
+            <div class="metric-value" id="model-value">—</div>
+            <div class="metric-foot"><span class="metric-neutral">Bottleneck prediction</span></div>
+            <div class="subtle-caption" id="model-foot"></div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel timeline-panel">
+            <div class="panel-heading">
+              <div><h2>Execution timeline</h2><p>Average duration and detected failures across the dataset</p></div>
+              <span class="chart-legend"><i class="legend-line"></i> Avg. duration <i class="legend-bar"></i> Failures</span>
+            </div>
+            <div class="chart-wrap" id="timeline-chart">
+              <div class="empty-chart">Your execution trend will appear here after analysis.</div>
+            </div>
+          </article>
+          <article class="panel quality-panel">
+            <div class="panel-heading"><div><h2>Data quality</h2><p>Input validation summary</p></div></div>
+            <div class="quality-score">
+              <div class="quality-ring" id="quality-ring"><span id="quality-percent">—</span></div>
+              <div><strong id="quality-status">Awaiting data</strong><span id="quality-detail">Run an analysis to check quality.</span></div>
+            </div>
+            <div class="quality-list" id="quality-list"></div>
+            <button class="text-button" id="quality-toggle" type="button" hidden>View all quality checks <span aria-hidden="true">→</span></button>
+          </article>
+        </div>
+
+        <article class="recovery-panel">
+          <div class="recovery-art" aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M24 5 40 11v12c0 10-7 16-16 20C15 39 8 33 8 23V11l16-6Z" stroke="currentColor" stroke-width="2.2"/><path d="m17 24 4.5 4.5L31.5 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="recovery-copy"><h2>See automatic recovery in action</h2><p>Simulate flaky pipeline tasks and watch retries resolve common failures.</p></div>
+          <button class="button button-secondary" id="recovery-button" type="button">Run recovery demo <span aria-hidden="true">→</span></button>
+          <div class="recovery-result" id="recovery-result" hidden></div>
+        </article>
+        </section>
+
+        <section class="tab-view" id="health-view" data-tab-view="health" role="tabpanel" aria-labelledby="tab-health" hidden>
+          <div class="section-heading">
+            <div><h2>Task health</h2><p>Run volume, detected failures, and duration by pipeline task.</p></div>
+            <span class="table-count" id="task-count"></span>
+          </div>
+          <article class="panel task-panel">
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Task</th><th>Runs</th><th>Flagged</th><th>Avg. duration</th><th>Health</th></tr></thead>
+                <tbody id="task-rows"><tr><td colspan="5" class="empty-row">Task results will appear after analysis.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="tab-view" id="risk-view" data-tab-view="risk" role="tabpanel" aria-labelledby="tab-risk" hidden>
+          <div class="section-heading">
+            <div><h2>Risk analysis</h2><p>Runs with the highest predicted bottleneck probability.</p></div>
+            <span class="risk-tag">TOP 10</span>
+          </div>
+          <article class="panel risk-panel">
+            <div class="risk-list" id="risk-list"><div class="empty-row">Risk predictions will appear after analysis.</div></div>
+          </article>
+        </section>
+        <section class="tab-view" id="quality-view" data-tab-view="quality" role="tabpanel" aria-labelledby="tab-quality" hidden>
+          <div class="section-heading"><div><h2>Data quality validation</h2><p>Schema, completeness, consistency, and range checks.</p></div></div>
+          <div class="metric-grid quality-summary-grid" id="quality-summary-cards"></div>
+          <article class="panel quality-details-panel">
+            <div class="panel-heading"><div><h2>Validation findings</h2><p id="quality-findings-caption">Findings from the latest dataset.</p></div></div>
+            <div class="quality-findings" id="quality-findings"></div>
+          </article>
+        </section>
+        <section class="tab-view" id="performance-view" data-tab-view="performance" role="tabpanel" aria-labelledby="tab-performance" hidden>
+          <div class="section-heading"><div><h2>Pipeline performance</h2><p>Execution and resource profile from the latest analysis.</p></div></div>
+          <div class="metric-grid performance-metrics" id="performance-metrics"></div>
+          <article class="panel performance-trend-panel">
+            <div class="panel-heading"><div><h2>Execution trend</h2><p>Average runtime and detected failures over time.</p></div></div>
+            <div class="chart-wrap" id="performance-chart"><div class="empty-chart">Run an analysis to view performance trends.</div></div>
+          </article>
+        </section>
+        <section class="tab-view" id="monitor-view" data-tab-view="monitor" role="tabpanel" aria-labelledby="tab-monitor" hidden>
+          <div class="section-heading"><div><h2>Monitoring &amp; recovery</h2><p>The demo simulates temporary source and warehouse issues, then retries them until the tasks recover.</p></div></div>
+          <div class="metric-grid monitor-summary" id="monitor-summary"></div>
+          <article class="panel monitor-panel">
+            <div class="panel-heading"><div><h2>Recent recovery events</h2><p>Temporary failures are marked as retried when a later attempt succeeds.</p></div><button class="button button-secondary" id="monitor-recovery-button" type="button">Run recovery demo</button></div>
+            <div class="table-scroll"><table><thead><tr><th>Task</th><th>Status</th><th>Attempt</th><th>Duration</th><th>Details</th></tr></thead><tbody id="monitor-events"><tr><td colspan="5" class="empty-row">No recovery events recorded yet.</td></tr></tbody></table></div>
+          </article>
+          <article class="panel monitor-logs-panel"><div class="panel-heading"><div><h2>Execution log</h2><p>Latest framework activity</p></div></div><pre id="monitor-logs" class="log-console">No execution log entries yet.</pre></article>
+        </section>
+        <section class="tab-view" id="reports-view" data-tab-view="reports" role="tabpanel" aria-labelledby="tab-reports" hidden>
+          <div class="section-heading"><div><h2>Reports &amp; run history</h2><p>Download machine-readable analysis or a readable Markdown summary.</p></div><button class="button button-secondary" id="refresh-reports" type="button">Refresh list</button></div>
+          <article class="panel reports-panel"><div class="panel-heading"><div><h2>Generated reports</h2><p id="reports-count">Saved locally in the reports folder</p></div></div><div id="report-list" class="report-list"><div class="empty-row">Loading reports…</div></div></article>
+          <article class="panel history-panel"><div class="panel-heading"><div><h2>Recent analysis runs</h2><p>Last 25 runs, saved across restarts</p></div></div><div class="table-scroll"><table><thead><tr><th>Run time</th><th>Source</th><th>Rows</th><th>Flagged</th><th>Reliability</th></tr></thead><tbody id="history-rows"><tr><td colspan="5" class="empty-row">No analysis runs yet.</td></tr></tbody></table></div></article>
+        </section>
+        <section class="tab-view" id="scheduler-view" data-tab-view="scheduler" role="tabpanel" aria-labelledby="tab-scheduler" hidden>
+          <div class="section-heading"><div><h2>Pipeline scheduler</h2><p>Analyze generated samples or continuously re-read a saved ETL export on a schedule.</p></div></div>
+          <article class="panel scheduler-panel">
+            <div class="scheduler-status"><span class="schedule-indicator" id="schedule-indicator"></span><div><strong id="schedule-state">Scheduler paused</strong><span id="schedule-detail">Configure and enable an interval to start automatic runs.</span></div></div>
+            <form id="schedule-form" class="schedule-form">
+              <label>Run interval<select id="schedule-interval"><option value="15">Every 15 seconds (demo)</option><option value="300">Every 5 minutes</option><option value="900">Every 15 minutes</option><option value="3600" selected>Every hour</option><option value="86400">Every day</option></select></label>
+              <label>Data source<select id="schedule-source"><option value="sample">Generated sample</option><option value="csv">Saved ETL CSV</option></select></label>
+              <label id="schedule-rows-field">Sample size<select id="schedule-rows"><option value="1000">1,000 rows</option><option value="10000" selected>10,000 rows</option><option value="50000">50,000 rows</option><option value="100000">100,000 rows</option><option value="500000">500,000 rows</option></select></label>
+              <label id="schedule-dataset-field" hidden>Saved CSV<select id="schedule-dataset"><option value="">Upload or select a CSV</option></select></label>
+              <label class="schedule-switch"><input id="schedule-enabled" type="checkbox"><span>Enable automatic runs</span></label>
+              <button class="button button-primary" id="save-schedule" type="submit">Save schedule</button>
+            </form>
+            <div class="schedule-upload">
+              <label for="schedule-csv-file">Add or replace an ETL CSV <input id="schedule-csv-file" type="file" accept=".csv,text/csv"></label>
+              <button class="button button-secondary" id="upload-schedule-csv" type="button">Save CSV for scheduling</button>
+              <span id="schedule-upload-status" role="status"></span>
+            </div>
+            <div class="schedule-meta" id="schedule-meta"></div>
+            <div class="schedule-error" id="schedule-error" hidden></div>
+          </article>
+          <p class="scheduler-note">CSV uploads are saved in <code>data/incoming/</code>. Each scheduled run reads the latest file contents, so an ETL job can replace that file with its newest export. The dashboard checks for completed analyses every 2 seconds and updates automatically. Keep the app running for scheduled runs.</p>
+        </section>
+      </section>
+
+      <section class="welcome-card" id="welcome-card">
+        <div class="welcome-visual" aria-hidden="true">
+          <div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div>
+          <div class="visual-node node-a"></div><div class="visual-node node-b"></div><div class="visual-node node-c"></div>
+          <div class="visual-center"><svg viewBox="0 0 48 48" fill="none"><path d="M7 32h8l5-19 7 25 5-16h9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </div>
+        <p class="eyebrow">YOUR PIPELINE, AT A GLANCE</p>
+        <h2>Make reliability your default.</h2>
+        <p>Run an analysis to uncover quality issues, spot failure patterns, and catch bottlenecks before they slow your team down.</p>
+        <button class="button button-primary" id="welcome-run" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"/></svg>
+          Analyze sample data
+        </button>
+      </section>
+
+      <footer class="footer"><span>PipelineIQ <span class="footer-dot">·</span> Pipeline reliability, made clear</span><a href="#data-source">Choose another data source</a></footer>
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>
