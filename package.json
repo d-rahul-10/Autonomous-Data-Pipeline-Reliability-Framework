@@ -1,0 +1,8 @@
+{
+  "name": "pipelineiq-dashboard",
+  "private": true,
+  "description": "Static frontend assets for the PipelineIQ Flask dashboard",
+  "dependencies": {
+    "gsap": "^3.15.0"
+  }
+}

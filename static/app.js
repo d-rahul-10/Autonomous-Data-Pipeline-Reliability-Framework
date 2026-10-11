@@ -2,6 +2,47 @@
   "use strict";
 
   const $ = (selector) => document.querySelector(selector);
+  const motionReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const gsap = window.gsap;
+  let revealObserver = null;
+  const revealSelector = ".section-heading,.metric-card,.panel,.welcome-card,.source-panel,.tab-empty-state,.footer";
+
+  function observeReveals(root = document) {
+    if (!revealObserver) return;
+    const elements = [];
+    if (root instanceof Element && root.matches(revealSelector)) elements.push(root);
+    elements.push(...root.querySelectorAll(revealSelector));
+    elements.forEach((element) => {
+      element.dataset.motionReveal = "";
+      if (element.dataset.motionObserved) return;
+      element.dataset.motionObserved = "true";
+      revealObserver.observe(element);
+    });
+  }
+
+  function initializeMotion() {
+    if (!gsap || motionReduced || !("IntersectionObserver" in window)) return;
+    document.documentElement.classList.add("motion-ready");
+    revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry, index) => {
+        if (!entry.isIntersecting) return;
+        revealObserver.unobserve(entry.target);
+        gsap.fromTo(entry.target,
+          { autoAlpha: 0, y: 16 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.48,
+            delay: Math.min(index * 0.035, 0.14),
+            ease: "power2.out",
+            clearProps: "opacity,visibility,transform"
+          });
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -32px 0px" });
+    observeReveals();
+  }
+
+  initializeMotion();
   const runButtons = [
     $("#run-analysis"),
     $("#welcome-run"),
@@ -135,6 +176,8 @@
       const selected = link.dataset.tab === tab;
       link.classList.toggle("active", selected);
       link.setAttribute("aria-selected", String(selected));
+      link.setAttribute("aria-label", link.textContent.trim());
+      link.title = link.textContent.trim();
       link.tabIndex = selected ? 0 : -1;
     });
     $(".breadcrumbs strong").textContent = tabTitles[tab].title;
@@ -153,6 +196,15 @@
     $("#quality-empty").hidden = tab !== "quality" || hasAnalysis;
     $("#performance-empty").hidden = tab !== "performance" || hasAnalysis;
     $("#monitor-empty").hidden = true;
+    const activeView = [...document.querySelectorAll("[data-tab-view],.tab-empty-state,.welcome-card")]
+      .find((view) => !view.hidden);
+    if (activeView && gsap && !motionReduced) {
+      gsap.killTweensOf(activeView);
+      gsap.fromTo(activeView,
+        { autoAlpha: 0, y: 10 },
+        { autoAlpha: 1, y: 0, duration: 0.3, ease: "power2.out", clearProps: "opacity,visibility,transform" });
+    }
+    observeReveals();
 
     if (updateHistory && window.location.hash !== tabHashes[tab]) {
       window.history.pushState({ tab }, "", tabHashes[tab]);
@@ -250,6 +302,8 @@
     renderRisks(Array.isArray(data.top_risk) ? data.top_risk : []);
     renderDetailedQuality(data);
     renderPerformance(data);
+    observeReveals();
+    observeReveals();
     if (activeTab === "monitor") void loadTabData("monitor");
     if (activeTab === "reports") void loadTabData("reports");
     if (activeTab === "scheduler") void loadTabData("scheduler");
@@ -624,6 +678,21 @@
     activateTab(link.dataset.tab);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }));
+  document.querySelector(".side-nav").addEventListener("keydown", (event) => {
+    const links = [...document.querySelectorAll(".side-nav [data-tab]")];
+    const currentIndex = links.indexOf(document.activeElement);
+    if (currentIndex < 0) return;
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") nextIndex += 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") nextIndex -= 1;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = links.length - 1;
+    else return;
+    event.preventDefault();
+    const nextLink = links[(nextIndex + links.length) % links.length];
+    nextLink.focus();
+    activateTab(nextLink.dataset.tab);
+  });
   window.addEventListener("popstate", () => {
     const hash = window.location.hash;
     const tab = Object.keys(tabHashes).find((name) => tabHashes[name] === hash) || "overview";

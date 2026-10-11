@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f3e8">
+  <meta name="theme-color" content="#080d14">
   <meta name="description" content="Monitor data pipeline health, detect failures, and surface bottlenecks.">
   <title>PipelineIQ — Reliability dashboard</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cyberpunk.css') }}">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="/" aria-label="PipelineIQ home">
@@ -72,7 +74,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main class="main-content" id="main-content" tabindex="-1">
       <header class="topbar">
         <div class="breadcrumbs"><span>Workspace</span><span class="crumb-divider">/</span><strong>Overview</strong></div>
         <div class="topbar-right">
@@ -330,6 +332,7 @@
       <footer class="footer"><span>PipelineIQ <span class="footer-dot">·</span> Pipeline reliability, made clear</span><a href="#data-source">Choose another data source</a></footer>
     </main>
   </div>
+  <script src="{{ url_for('static', filename='vendor/gsap.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

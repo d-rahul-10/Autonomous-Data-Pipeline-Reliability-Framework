@@ -1,0 +1,262 @@
+/* ==========================================================================
+   DESIGN TOKENS — PipelineIQ Cyberpunk Anime Design System
+   ========================================================================== */
+
+:root {
+  /* =========================================================================
+     COLOR PALETTE — Semantic Tokens
+     ========================================================================= */
+
+  /* Base surfaces (dark high-contrast) */
+  --color-bg-deep: #05080c;
+  --color-bg-base: #080d14;
+  --color-bg-card: #0c141e;
+  --color-bg-elevated: #111d2d;
+  --color-bg-hover: #162538;
+  --color-bg-active: #1a2f45;
+
+  /* Borders & dividers */
+  --color-border-subtle: #1a2f45;
+  --color-border-default: #244058;
+  --color-border-strong: #305878;
+  --color-border-focus: #60e8df;
+
+  /* Text hierarchy */
+  --color-text-primary: #e8f4f6;
+  --color-text-secondary: #b8d0d6;
+  --color-text-muted: #8aa8b0;
+  --color-text-inverse: #05080c;
+
+  /* Neon accent palette */
+  --color-neon-cyan: #60e8df;
+  --color-neon-cyan-dim: #3dd4c8;
+  --color-neon-cyan-bright: #8ff7ef;
+
+  --color-neon-magenta: #d9a0ff;
+  --color-neon-magenta-dim: #c47fff;
+  --color-neon-magenta-bright: #e8c8ff;
+
+  --color-neon-green: #7ce7b2;
+  --color-neon-green-dim: #5bd89a;
+  --color-neon-green-bright: #aaffd0;
+
+  --color-neon-orange: #ffca78;
+  --color-neon-orange-dim: #ffb850;
+  --color-neon-orange-bright: #ffe0a0;
+
+  --color-neon-red: #ff8798;
+  --color-neon-red-dim: #ff6078;
+  --color-neon-red-bright: #ffa8b4;
+
+  /* Semantic status colors */
+  --color-success: var(--color-neon-green);
+  --color-warning: var(--color-neon-orange);
+  --color-error: var(--color-neon-red);
+  --color-info: var(--color-neon-cyan);
+
+  /* Glow effects */
+  --glow-sm: 0 0 12px rgba(96, 232, 223, 0.18);
+  --glow-md: 0 0 24px rgba(96, 232, 223, 0.28);
+  --glow-lg: 0 0 48px rgba(96, 232, 223, 0.18);
+  --glow-magenta: 0 0 24px rgba(217, 160, 255, 0.25);
+  --glow-green: 0 0 24px rgba(124, 231, 178, 0.3);
+  --glow-orange: 0 0 24px rgba(255, 202, 120, 0.28);
+  --glow-red: 0 0 24px rgba(255, 135, 152, 0.3);
+
+  /* =========================================================================
+     SPACING SYSTEM
+     ========================================================================= */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* =========================================================================
+     TYPOGRAPHY SYSTEM
+     ========================================================================= */
+  --font-ui: "JetBrains Mono", "Segoe UI Variable", "Bahnschrift", system-ui, sans-serif;
+  --font-display: "Orbitron", "JetBrains Mono", "Bahnschrift", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  --text-xs: clamp(0.625rem, 0.6rem + 0.125vw, 0.6875rem);
+  --text-sm: clamp(0.75rem, 0.725rem + 0.125vw, 0.8125rem);
+  --text-base: clamp(0.875rem, 0.85rem + 0.125vw, 0.9375rem);
+  --text-lg: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-xl: clamp(1.125rem, 1.05rem + 0.375vw, 1.375rem);
+  --text-2xl: clamp(1.375rem, 1.25rem + 0.625vw, 1.75rem);
+  --text-3xl: clamp(1.75rem, 1.5rem + 1.25vw, 2.5rem);
+  --text-4xl: clamp(2.25rem, 1.875rem + 1.875vw, 3.5rem);
+  --text-5xl: clamp(3rem, 2.25rem + 3.75vw, 5rem);
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  --line-height-tight: 1.15;
+  --line-height-snug: 1.3;
+  --line-height-normal: 1.55;
+  --line-height-relaxed: 1.7;
+
+  --letter-spacing-tight: -0.03em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.05em;
+  --letter-spacing-wider: 0.1em;
+  --letter-spacing-widest: 0.2em;
+
+  /* =========================================================================
+     BORDER RADIUS
+     ========================================================================= */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* =========================================================================
+     SHADOWS & DEPTH
+     ========================================================================= */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  /* =========================================================================
+     ANIMATION TOKENS
+     ========================================================================= */
+  --duration-instant: 50ms;
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --duration-slower: 480ms;
+  --duration-slowest: 720ms;
+
+  --ease-linear: linear;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-circ: cubic-bezier(0.075, 0.82, 0.165, 1);
+
+  /* Stagger presets */
+  --stagger-tight: 0.02s;
+  --stagger-normal: 0.04s;
+  --stagger-loose: 0.08s;
+  --stagger-looser: 0.12s;
+
+  /* =========================================================================
+     Z-INDEX LAYERS
+     ========================================================================= */
+  --z-bg: -1;
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-sidebar: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-tooltip: 600;
+  --z-toast: 700;
+  --z-skip-link: 1000;
+
+  /* =========================================================================
+     BREAKPOINTS (Mobile-first)
+     ========================================================================= */
+  --bp-sm: 640px;
+  --bp-md: 1024px;
+  --bp-lg: 1440px;
+  --bp-xl: 1920px;
+
+  /* =========================================================================
+     CONTAINER WIDTHS
+     ========================================================================= */
+  --container-sm: 640px;
+  --container-md: 1024px;
+  --container-lg: 1280px;
+  --container-xl: 1440px;
+  --container-full: 100%;
+}
+
+/* ==========================================================================
+   MEDIA QUERY HELPERS
+   ========================================================================== */
+@media (min-width: 640px) { :root { --mq-sm: true; } }
+@media (min-width: 1024px) { :root { --mq-md: true; } }
+@media (min-width: 1440px) { :root { --mq-lg: true; } }
+@media (min-width: 1920px) { :root { --mq-xl: true; } }
+
+/* ==========================================================================
+   REDUCED MOTION
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0.01ms;
+    --duration-fast: 0.01ms;
+    --duration-normal: 0.01ms;
+    --duration-slow: 0.01ms;
+    --duration-slower: 0.01ms;
+    --duration-slowest: 0.01ms;
+    --stagger-tight: 0;
+    --stagger-normal: 0;
+    --stagger-loose: 0;
+    --stagger-looser: 0;
+  }
+}
+
+/* ==========================================================================
+   HIGH CONTRAST MODE
+   ========================================================================== */
+@media (prefers-contrast: more) {
+  :root {
+    --color-border-subtle: #4a6f8a;
+    --color-border-default: #60e8df;
+    --color-border-strong: #8ff7ef;
+    --color-text-muted: #c8e8ec;
+    --glow-sm: none;
+    --glow-md: none;
+    --glow-lg: none;
+  }
+}
+
+/* ==========================================================================
+   PRINT STYLES
+   ========================================================================== */
+@media print {
+  :root {
+    --color-bg-deep: #fff;
+    --color-bg-base: #fff;
+    --color-bg-card: #fff;
+    --color-bg-elevated: #f8fafc;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #334155;
+    --color-text-muted: #64748b;
+    --color-neon-cyan: #0891b2;
+    --color-neon-magenta: #9333ea;
+    --color-neon-green: #16a34a;
+    --color-neon-orange: #ea580c;
+    --color-neon-red: #dc2626;
+    --shadow-xs: none;
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+    --shadow-xl: none;
+  }
+}

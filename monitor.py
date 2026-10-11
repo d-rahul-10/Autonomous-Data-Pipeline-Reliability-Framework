@@ -68,7 +68,24 @@ class PipelineMonitor:
         cancel_event = threading.Event()
         if cancel_on_timeout:
             kwargs["cancel_event"] = cancel_event
+
         pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            self._check_concurrent(name, pool, allow_concurrent)
+            future = pool.submit(fn, *args, **kwargs)
+            self._track_task(name, future)
+            result = self._wait_for_result(future)
+            self._record(name, started_at, start, "SUCCESS", attempt)
+            self.log.info("task=%s attempt=%d status=SUCCESS", name, attempt)
+            return result
+        except FutTimeout:
+            self._handle_timeout(name, started_at, start, attempt, future, cancel_event, cancel_on_timeout)
+        except Exception as exc:
+            self._handle_exception(name, started_at, start, attempt, exc)
+        finally:
+            pool.shutdown(wait=False)
+
+    def _check_concurrent(self, name: str, pool: ThreadPoolExecutor, allow_concurrent: bool) -> None:
         with self._active_lock:
             active = self._active_tasks.get(name, set())
             active = {future for future in active if not future.done()}
@@ -77,46 +94,63 @@ class PipelineMonitor:
                 raise TaskAlreadyRunningError(
                     f"Task '{name}' is still running after its previous attempt timed out."
                 )
-            future = pool.submit(fn, *args, **kwargs)
+
+    def _track_task(self, name: str, future) -> None:
+        with self._active_lock:
+            active = self._active_tasks.get(name, set())
             active.add(future)
             self._active_tasks[name] = active
         future.add_done_callback(lambda completed: self._release_task(name, completed))
-        try:
-            result = future.result(timeout=self.timeout_s)
-            self._record(name, started_at, start, "SUCCESS", attempt)
-            self.log.info("task=%s attempt=%d status=SUCCESS", name, attempt)
-            return result
-        except FutTimeout:
-            if future.done():
-                task_error = future.exception()
-                if task_error is not None:
-                    self._record(
-                        name, started_at, start, "FAILED", attempt,
-                        type(task_error).__name__, str(task_error),
-                    )
-                    self.log.error(
-                        "task=%s attempt=%d status=FAILED error=%s: %s",
-                        name, attempt, type(task_error).__name__, task_error,
-                    )
-                    raise task_error
-            if cancel_on_timeout:
-                cancel_event.set()
-            task_still_running = not future.done()
-            message = (
-                f"Task '{name}' exceeded {self.timeout_s}s; "
-                f"worker still running at timeout check: {task_still_running}."
-            )
-            self._record(name, started_at, start, "TIMEOUT", attempt, "TaskTimeoutError", message)
-            self.log.error("task=%s attempt=%d status=TIMEOUT worker_running=%s",
-                           name, attempt, task_still_running)
-            raise TaskTimeoutError(message, task_still_running)
-        except Exception as exc:
-            self._record(name, started_at, start, "FAILED", attempt, type(exc).__name__, str(exc))
-            self.log.error("task=%s attempt=%d status=FAILED error=%s: %s\n%s",
-                           name, attempt, type(exc).__name__, exc, traceback.format_exc(limit=2))
-            raise
-        finally:
-            pool.shutdown(wait=False)
+
+    def _wait_for_result(self, future):
+        return future.result(timeout=self.timeout_s)
+
+    def _handle_timeout(
+        self,
+        name: str,
+        started_at: str,
+        start: float,
+        attempt: int,
+        future,
+        cancel_event: threading.Event,
+        cancel_on_timeout: bool,
+    ) -> None:
+        if future.done():
+            task_error = future.exception()
+            if task_error is not None:
+                self._record(
+                    name, started_at, start, "FAILED", attempt,
+                    type(task_error).__name__, str(task_error),
+                )
+                self.log.error(
+                    "task=%s attempt=%d status=FAILED error=%s: %s",
+                    name, attempt, type(task_error).__name__, task_error,
+                )
+                raise task_error
+        if cancel_on_timeout:
+            cancel_event.set()
+        task_still_running = not future.done()
+        message = (
+            f"Task '{name}' exceeded {self.timeout_s}s; "
+            f"worker still running at timeout check: {task_still_running}."
+        )
+        self._record(name, started_at, start, "TIMEOUT", attempt, "TaskTimeoutError", message)
+        self.log.error("task=%s attempt=%d status=TIMEOUT worker_running=%s",
+                       name, attempt, task_still_running)
+        raise TaskTimeoutError(message, task_still_running)
+
+    def _handle_exception(
+        self,
+        name: str,
+        started_at: str,
+        start: float,
+        attempt: int,
+        exc: Exception,
+    ) -> None:
+        self._record(name, started_at, start, "FAILED", attempt, type(exc).__name__, str(exc))
+        self.log.error("task=%s attempt=%d status=FAILED error=%s: %s\n%s",
+                       name, attempt, type(exc).__name__, exc, traceback.format_exc(limit=2))
+        raise
 
     def _release_task(self, name, future):
         with self._active_lock:

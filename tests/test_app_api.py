@@ -21,8 +21,9 @@ _TEST_ROOT = TemporaryDirectory(prefix="pipeline-api-tests-")
 os.chdir(_TEST_ROOT.name)
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from app import _json_default, _read_pipeline_csv, app as flask_app
+from app import _json_default, app as flask_app
 from main import build_config
+from pipeline_core import _read_pipeline_csv
 from synthetic_data import generate_logs
 
 
@@ -130,7 +131,6 @@ class ApplicationApiTests(unittest.TestCase):
 
         parsed = _read_pipeline_csv(
             io.BytesIO(csv_content.encode("utf-8")),
-            "pipeline.csv",
             build_config(),
             check_clean_rows=False,
         )

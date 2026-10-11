@@ -8,7 +8,7 @@ import json
 import math
 import os
 import sqlite3
-import uuid
+import secrets
 from contextlib import contextmanager
 
 import numpy as np
@@ -21,7 +21,8 @@ from bottleneck_predictor import BottleneckPredictor
 from csv_input import read_csv_table
 from data_quality import DataQualityValidator
 from failure_detector import FailureDetector
-from main import build_config, demo_live_pipeline
+from pipeline_core import _read_pipeline_csv, build_config
+from main import demo_live_pipeline
 from reporter import Reporter
 from synthetic_data import generate_logs
 
@@ -50,6 +51,10 @@ _schedule = {
 _scheduler_thread = None
 _schedule_version = 0
 
+# Async analysis job tracking
+_analysis_jobs = {}
+_analysis_jobs_lock = threading.Lock()
+
 
 def _json_default(o):
     if isinstance(o, np.generic):
@@ -74,8 +79,11 @@ def _iso_now():
 def _connect_state():
     path = Path(app.config["STATE_DB_PATH"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=30)
+    connection = sqlite3.connect(path, timeout=30, isolation_level=None)
     connection.execute("PRAGMA busy_timeout = 30000")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA synchronous = NORMAL")
+    connection.execute("PRAGMA cache_size = -32768")  # 32MB cache
     return connection
 
 
@@ -183,34 +191,6 @@ def _load_persistent_state():
         _scheduler_thread.start()
 
 
-def _read_pipeline_csv(file_path, source, cfg, check_clean_rows=True):
-    try:
-        df = read_csv_table(file_path, low_memory=False)
-    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
-        raise ValueError(f"Could not read CSV '{source}': {exc}") from exc
-    needed = [
-        cfg.col_timestamp, cfg.col_task, cfg.col_status, cfg.col_duration,
-        cfg.col_cpu, cfg.col_memory, cfg.col_io, cfg.col_latency,
-    ]
-    missing = [column for column in needed if column not in df.columns]
-    if missing:
-        raise ValueError(
-            f"CSV '{source}' was read, but it is not in the ETL pipeline-log format this "
-            f"dashboard analyzes; missing required columns: {missing}. "
-            f"Found columns: {list(df.columns)}. Upload ETL run logs with the required "
-            "timestamp, task_id, status, duration, cpu_usage, memory_usage, "
-            "io_throughput, and latency columns, or map your ETL column names in config.py."
-        )
-    if cfg.col_error not in df.columns:
-        df[cfg.col_error] = None
-    if cfg.col_deps not in df.columns:
-        df[cfg.col_deps] = ""
-    df[cfg.col_timestamp] = pd.to_datetime(df[cfg.col_timestamp], errors="coerce")
-    if check_clean_rows and len(DataQualityValidator(cfg).clean(df)) < 200:
-        raise ValueError("Too few valid rows after cleaning (need at least 200).")
-    return df
-
-
 def _analyze_dataframe(df, source, cfg):
     """Run the complete analysis once, for uploads, samples, and scheduled runs."""
     global _latest_analysis
@@ -254,11 +234,11 @@ def _analyze_dataframe(df, source, cfg):
 
     risk = predictor.predict_risk(clean.tail(5000)).nlargest(10, "bottleneck_risk")
     top_risk = [{
-        "timestamp": str(row[timestamp]),
-        "task": str(row[task]),
-        "duration": round(float(row[duration]), 2),
-        "risk": round(float(row["bottleneck_risk"]), 3),
-    } for _, row in risk.iterrows()]
+        "timestamp": str(getattr(row, timestamp)),
+        "task": str(getattr(row, task)),
+        "duration": round(float(getattr(row, duration)), 2),
+        "risk": round(float(row.bottleneck_risk), 3),
+    } for row in risk.itertuples(index=False)]
 
     performance = {
         "avg_duration": round(float(clean[duration].mean()), 2),
@@ -303,8 +283,157 @@ def _analyze_dataframe(df, source, cfg):
     return payload
 
 
+def _run_analysis_async(job_id: str, df, source: str, cfg):
+    """Background thread target for async analysis."""
+    with _analysis_jobs_lock:
+        _analysis_jobs[job_id] = {
+            "status": "running",
+            "progress": 0,
+            "stage": "starting",
+            "result": None,
+            "error": None,
+            "started_at": _iso_now(),
+        }
+
+    def update_progress(stage: str, progress: int):
+        with _analysis_jobs_lock:
+            if job_id in _analysis_jobs:
+                _analysis_jobs[job_id]["stage"] = stage
+                _analysis_jobs[job_id]["progress"] = progress
+
+    try:
+        update_progress("validating", 10)
+        dq_report = DataQualityValidator(cfg).validate(df)
+
+        update_progress("cleaning", 20)
+        clean = DataQualityValidator(cfg).clean(df)
+        if len(clean) < 200:
+            raise ValueError("Too few valid rows after cleaning (need at least 200).")
+
+        update_progress("detecting_failures", 40)
+        fd = FailureDetector(cfg).fit_anomaly(clean)
+        detected = fd.detect(clean)
+        failures = fd.summarize(detected)
+
+        update_progress("training_model", 60)
+        predictor = BottleneckPredictor(cfg)
+        metrics = predictor.train(clean)
+        predictor.save()
+        metrics.pop("report", None)
+
+        update_progress("computing_metrics", 80)
+        timestamp, duration, task = cfg.col_timestamp, cfg.col_duration, cfg.col_task
+        ordered = detected[[timestamp, duration, "failure_detected"]].sort_values(
+            timestamp, kind="stable"
+        ).reset_index(drop=True)
+        chunks = [indices for indices in np.array_split(
+            np.arange(len(ordered)), min(80, len(ordered))
+        ) if len(indices)]
+        timeline = [{
+            "t": str(ordered[timestamp].iloc[indices[0]])[:16],
+            "avg_duration": round(float(ordered[duration].iloc[indices].mean()), 2),
+            "failures": int(ordered["failure_detected"].iloc[indices].sum()),
+        } for indices in chunks]
+
+        by_task = (
+            detected.groupby(task)
+            .agg(runs=("failure_detected", "size"),
+                 flagged=("failure_detected", "sum"),
+                 avg_duration=(duration, "mean"))
+            .round(2)
+            .reset_index()
+            .rename(columns={task: "task"})
+            .to_dict("records")
+        )
+
+        risk = predictor.predict_risk(clean.tail(5000)).nlargest(10, "bottleneck_risk")
+        top_risk = [{
+            "timestamp": str(getattr(row, timestamp)),
+            "task": str(getattr(row, task)),
+            "duration": round(float(getattr(row, duration)), 2),
+            "risk": round(float(row.bottleneck_risk), 3),
+        } for row in risk.itertuples(index=False)]
+
+        performance = {
+            "avg_duration": round(float(clean[duration].mean()), 2),
+            "p95_duration": round(float(clean[duration].quantile(.95)), 2),
+            "max_duration": round(float(clean[duration].max()), 2),
+            "avg_cpu": round(float(clean[cfg.col_cpu].mean()), 2),
+            "avg_memory": round(float(clean[cfg.col_memory].mean()), 2),
+            "avg_io": round(float(clean[cfg.col_io].mean()), 2),
+            "avg_latency": round(float(clean[cfg.col_latency].mean()), 2),
+            "task_count": int(clean[task].nunique()),
+        }
+
+        payload = {
+            "source": source,
+            "generated_at": _iso_now(),
+            "rows_raw": len(df),
+            "rows_clean": len(clean),
+            "data_quality": dq_report,
+            "failures": failures,
+            "model": metrics,
+            "performance": performance,
+            "timeline": timeline,
+            "by_task": by_task,
+            "top_risk": top_risk,
+        }
+        json_report, _ = Reporter(cfg).write({"source": source, "analysis": payload})
+        payload["report_file"] = Path(json_report).name
+
+        update_progress("finalizing", 95)
+
+        with _state_lock:
+            _latest_analysis = payload
+            _analysis_history.insert(0, payload)
+            del _analysis_history[25:]
+            with _state_connection() as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO analysis_history (generated_at, payload) VALUES (?, ?)",
+                    (payload["generated_at"], json.dumps(payload, default=_json_default)),
+                )
+                db.execute(
+                    "DELETE FROM analysis_history WHERE generated_at NOT IN "
+                    "(SELECT generated_at FROM analysis_history ORDER BY generated_at DESC LIMIT 25)"
+                )
+
+        with _analysis_jobs_lock:
+            _analysis_jobs[job_id].update({
+                "status": "completed",
+                "progress": 100,
+                "stage": "done",
+                "result": payload,
+                "completed_at": _iso_now(),
+            })
+
+    except Exception as exc:
+        app.logger.exception("async analysis failed")
+        with _analysis_jobs_lock:
+            _analysis_jobs[job_id].update({
+                "status": "failed",
+                "progress": 100,
+                "stage": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+                "completed_at": _iso_now(),
+            })
+
+
+def _cleanup_old_jobs(max_age_hours: int = 24):
+    """Remove completed/failed jobs older than max_age_hours."""
+    cutoff = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
+    with _analysis_jobs_lock:
+        to_remove = [
+            jid for jid, job in _analysis_jobs.items()
+            if job["status"] in ("completed", "failed")
+            and datetime.fromisoformat(job.get("completed_at", "1970-01-01")).timestamp() < cutoff
+        ]
+        for jid in to_remove:
+            del _analysis_jobs[jid]
+
+
 def _scheduler_loop():
     global _scheduler_thread
+    wait_event = threading.Event()
     while True:
         due = False
         with _state_lock:
@@ -339,7 +468,7 @@ def _scheduler_loop():
                             raise FileNotFoundError(
                                 f"Scheduled CSV '{dataset_name}' was not found in the incoming data folder."
                             )
-                        df = _read_pipeline_csv(dataset_path, dataset_name, cfg, check_clean_rows=False)
+                        df = _read_pipeline_csv(dataset_path, cfg, check_clean_rows=False)
                         source = f"scheduled CSV ({dataset_name})"
                     else:
                         df = generate_logs(rows)
@@ -367,7 +496,7 @@ def _scheduler_loop():
                         _persist_schedule_locked()
                     except sqlite3.Error:
                         app.logger.exception("could not persist completed scheduler state")
-        threading.Event().wait(1)
+        wait_event.wait(1)
 
 
 def _schedule_response():
@@ -393,6 +522,7 @@ def analyze():
     cfg = build_config()
     cfg.backoff_base_s = 0.1
     upload = request.files.get("file")
+    async_mode = request.form.get("async", "false").lower() == "true"
     try:
         if not upload or not upload.filename:
             try:
@@ -405,8 +535,20 @@ def analyze():
         else:
             if Path(upload.filename).suffix.lower() != ".csv":
                 return jsonify(error="Upload a CSV file to analyze."), 400
-            df = _read_pipeline_csv(upload, upload.filename, cfg, check_clean_rows=False)
+            df = _read_pipeline_csv(upload, cfg, check_clean_rows=False)
             source = secure_filename(upload.filename) or "uploaded.csv"
+
+        if async_mode:
+            import uuid
+            job_id = str(uuid.uuid4())
+            thread = threading.Thread(
+                target=_run_analysis_async,
+                args=(job_id, df, source, cfg),
+                name=f"analysis-{job_id[:8]}",
+                daemon=True,
+            )
+            thread.start()
+            return jsonify({"job_id": job_id, "status": "started"}), 202
 
         with _analysis_lock:
             result = _analyze_dataframe(df, source, cfg)
@@ -417,6 +559,28 @@ def analyze():
     except Exception:
         app.logger.exception("analysis failed")
         return jsonify(error="Analysis failed due to an internal server error."), 500
+
+
+@app.get("/api/analyze/jobs/<job_id>")
+def get_analysis_job(job_id):
+    _cleanup_old_jobs()
+    with _analysis_jobs_lock:
+        job = _analysis_jobs.get(job_id)
+    if not job:
+        return jsonify(error="Job not found"), 404
+    return jsonify(job)
+
+
+@app.get("/api/analyze/jobs")
+def list_analysis_jobs():
+    _cleanup_old_jobs()
+    with _analysis_jobs_lock:
+        jobs = [
+            {"job_id": jid, **{k: v for k, v in job.items() if k != "result"}}
+            for jid, job in _analysis_jobs.items()
+        ]
+    jobs.sort(key=lambda x: x.get("started_at", ""), reverse=True)
+    return jsonify(jobs=jobs)
 
 
 @app.get("/api/status")
@@ -483,18 +647,11 @@ def logs():
     if not path.exists():
         return jsonify(logs=[])
 
-    chunk_size = 8192
-    with path.open("rb") as log_file:
-        log_file.seek(0, os.SEEK_END)
-        position = log_file.tell()
-        content = b""
-        while position > 0 and content.count(b"\n") <= limit:
-            read_size = min(chunk_size, position)
-            position -= read_size
-            log_file.seek(position)
-            content = log_file.read(read_size) + content
-    lines = content.decode("utf-8", errors="replace").splitlines()
-    return jsonify(logs=lines[-limit:])
+    # Read last N lines efficiently using deque
+    from collections import deque
+    with path.open("r", encoding="utf-8", errors="replace") as log_file:
+        lines = deque(log_file, maxlen=limit)
+    return jsonify(logs=list(lines))
 
 
 @app.get("/api/monitor")
@@ -537,11 +694,11 @@ def upload_schedule_dataset():
 
     incoming_dir = Path(app.config["SCHEDULE_DATA_DIR"])
     incoming_dir.mkdir(parents=True, exist_ok=True)
-    temporary_path = incoming_dir / f".{uuid.uuid4().hex}.upload"
+    temporary_path = incoming_dir / f".{secrets.token_urlsafe(16)}.upload"
     destination = incoming_dir / filename
     try:
         upload.save(temporary_path)
-        _read_pipeline_csv(temporary_path, filename, build_config())
+        _read_pipeline_csv(temporary_path, build_config())
         os.replace(temporary_path, destination)
     except (ValueError, pd.errors.ParserError, UnicodeDecodeError) as exc:
         app.logger.info("scheduled CSV rejected: %s", exc)

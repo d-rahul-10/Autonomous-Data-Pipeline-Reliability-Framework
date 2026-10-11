@@ -12,7 +12,7 @@ A local Flask dashboard and Python toolkit for reviewing ETL log quality, detect
 
 **Proposed solution:** A modular Python framework with a Flask dashboard and CLI. Pandas performs quality validation and cleaning; rule-based checks and Isolation Forest flag failures/anomalies; registered recovery actions and retries demonstrate recovery; a Random Forest classifier estimates bottleneck risk; and SQLite, logging, and JSON/Markdown reports support local operation.
 
-**Technology:** Python, Flask, Pandas, NumPy, scikit-learn, joblib, SQLite, HTML, CSS, and vanilla JavaScript.
+**Technology:** Python, Flask, Pandas, NumPy, scikit-learn, joblib, SQLite, HTML, CSS, vanilla JavaScript, and a locally served GSAP animation bundle.
 
 **Current status:** The repository contains a working local prototype with dashboard/API and CLI analysis, synthetic-data and CSV input, validation, failure detection, bottleneck prediction, recovery demonstration, recurring scheduling, report downloads, and backend regression tests. This is not evidence of production deployment, external real-time ETL instrumentation, or validation against the public dataset described in the review slides. The presentation mentions a public dataset with 500,000+ records, but that dataset is not bundled here; generated logs are the default input.
 
@@ -52,6 +52,8 @@ The default required columns are:
 `error_code` and `dependencies` are optional. Column mappings, failure statuses, validation schema, model parameters, and output paths can be changed in `config.py`. Keep the configured required columns present in uploaded CSVs.
 
 The dashboard and command-line analysis require at least 200 valid rows after cleaning. A CSV export may have metadata rows before its table; the reader retries those files only when it can identify a consistent table. The CLI rejects missing required CSV columns and non-positive generated sample sizes with a clear usage error. Population-statistics files are not ETL execution logs and cannot be analyzed directly by this project.
+
+The dashboard uses a locally bundled GSAP runtime for page transitions and scroll-triggered reveals; CSS provides responsive styling and reduced-motion support. See [STYLE_GUIDE.md](STYLE_GUIDE.md) for the palette, animation tokens, component variants, and asset update instructions. Node.js is only needed when refreshing the GSAP bundle, not to run the Flask app.
 
 ## Dashboard workspaces
 

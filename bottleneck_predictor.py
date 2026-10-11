@@ -12,8 +12,8 @@ from config import Config
 
 
 class BottleneckPredictor:
-    MAX_TRAIN_ROWS = 100_000
-    MAX_TEST_ROWS = 100_000
+    MAX_TRAIN_ROWS = 20_000
+    MAX_TEST_ROWS = 20_000
     FEATURES = ["cpu", "mem", "io", "latency", "dep_count", "hour", "dow", "task_code",
                 "prev_dur_mean5", "prev_cpu_mean5"]
 
@@ -34,11 +34,12 @@ class BottleneckPredictor:
         d = df.loc[:, columns].sort_values(c.col_timestamp).copy()
         ts = pd.to_datetime(d[c.col_timestamp])
         d["cpu"], d["mem"], d["io"], d["latency"] = d[c.col_cpu], d[c.col_memory], d[c.col_io], d[c.col_latency]
-        d["dep_count"] = d[c.col_deps].fillna("").astype(str).apply(lambda s: 0 if s in ("", "0", "[]") else len(s.split(",")))
+        deps = d[c.col_deps].fillna("").astype(str)
+        d["dep_count"] = deps.str.split(",").str.len().where(~deps.isin(("", "0", "[]")), 0)
         d["hour"], d["dow"] = ts.dt.hour, ts.dt.dayofweek
         if not self.task_codes:
             self.task_codes = {t: i for i, t in enumerate(sorted(d[c.col_task].astype(str).unique()))}
-        d["task_code"] = d[c.col_task].astype(str).map(self.task_codes).fillna(-1)
+        d["task_code"] = d[c.col_task].astype(str).map(self.task_codes).fillna(-1).astype(int)
         g = d.groupby(c.col_task)
         d["prev_dur_mean5"] = g[c.col_duration].transform(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
         d["prev_cpu_mean5"] = g[c.col_cpu].transform(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
