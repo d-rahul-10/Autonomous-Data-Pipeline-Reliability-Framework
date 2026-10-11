@@ -56,6 +56,28 @@
   let qualityIssues = [];
   let currentAnalysis = null;
   let statusPollInProgress = false;
+
+  // Auth integration
+  function getAuthToken() {
+    return window.PipelineAuth?.getToken?.() || null;
+  }
+
+  function authFetch(url, options = {}) {
+    const token = getAuthToken();
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetch(url, { ...options, headers });
+  }
+
+  // Override fetch for API calls to include auth
+  const originalFetch = window.fetch.bind(window);
+  window.authFetch = authFetch;
+
   const tabTitles = {
     overview: { title: "Overview", subtitle: "A clear view of your pipeline health, performance, and risks." },
     health: { title: "Task health", subtitle: "Compare run volume, detected failures, and duration by task." },
@@ -151,7 +173,7 @@
     if (statusPollInProgress || document.visibilityState === "hidden") return;
     statusPollInProgress = true;
     try {
-      const state = await readResponse(await fetch("/api/status"));
+      const state = await readResponse(await authFetch("/api/status"));
       setSystemStatus(Boolean(state.ready), state.schedule);
       if (state.latest_analysis && !$("#run-analysis").disabled &&
           state.latest_analysis.generated_at !== currentAnalysis?.generated_at) {
@@ -247,7 +269,7 @@
     }
 
     try {
-      const response = await fetch("/api/analyze", { method: "POST", body: form });
+      const response = await authFetch("/api/analyze", { method: "POST", body: form });
       renderResults(await readResponse(response));
       setSystemStatus(true);
       $("#last-run").textContent = `Updated ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date())}`;
@@ -467,21 +489,21 @@
         renderPerformance(currentAnalysis);
       } else if (tab === "reports") {
         const [reportData, historyData] = await Promise.all([
-          readResponse(await fetch("/api/reports")),
-          readResponse(await fetch("/api/history"))
+          readResponse(await authFetch("/api/reports")),
+          readResponse(await authFetch("/api/history"))
         ]);
         renderReports(reportData.reports || []);
         renderHistory(historyData.history || []);
       } else if (tab === "monitor") {
         const [monitorData, logData] = await Promise.all([
-          readResponse(await fetch("/api/monitor")),
-          readResponse(await fetch("/api/logs?limit=150"))
+          readResponse(await authFetch("/api/monitor")),
+          readResponse(await authFetch("/api/logs?limit=150"))
         ]);
         renderMonitor(monitorData, logData.logs || []);
       } else if (tab === "scheduler") {
         const [scheduleData, datasetData] = await Promise.all([
-          readResponse(await fetch("/api/schedule")),
-          readResponse(await fetch("/api/schedule/datasets"))
+          readResponse(await authFetch("/api/schedule")),
+          readResponse(await authFetch("/api/schedule/datasets"))
         ]);
         renderScheduleDatasets(datasetData.datasets || [], scheduleData.schedule.dataset_name);
         renderSchedule(scheduleData.schedule);
@@ -630,9 +652,9 @@
     try {
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch("/api/schedule/datasets", { method: "POST", body: form });
+      const response = await authFetch("/api/schedule/datasets", { method: "POST", body: form });
       const data = await readResponse(response);
-      const datasets = await readResponse(await fetch("/api/schedule/datasets"));
+      const datasets = await readResponse(await authFetch("/api/schedule/datasets"));
       renderScheduleDatasets(datasets.datasets || [], data.dataset.name);
       $("#schedule-source").value = "csv";
       syncScheduleSourceControls();
@@ -646,7 +668,7 @@
     }
   }
 
-  async function runRecoveryDemo() {
+async function runRecoveryDemo() {
     clearNotice();
     const button = document.activeElement?.closest("#recovery-button, #monitor-recovery-button") || $("#recovery-button");
     const result = $("#recovery-result");
@@ -654,18 +676,19 @@
     button.textContent = "Running demo…";
     result.hidden = true;
     try {
-      const response = await fetch("/api/recovery-demo", { method: "POST" });
+      const response = await authFetch("/api/recovery-demo", { method: "POST" });
       const data = await readResponse(response);
       const recovery = data.recovery || {};
       result.textContent = `Recovery demo complete · ${number(data.rows_loaded)} rows loaded · ${number(recovery.recovered || 0)} tasks recovered on retry · ${number(recovery.non_recoverable || 0)} issue${Number(recovery.non_recoverable || 0) === 1 ? "" : "s"} escalated as expected.`;
       result.hidden = false;
       if (activeTab === "monitor") await loadTabData("monitor");
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The recovery demo couldn’t be completed.");
+      showNotice(error instanceof Error ? error.message : "The recovery demo couldn't be completed.");
     } finally {
       button.disabled = false;
       button.innerHTML = 'Run recovery demo <span aria-hidden="true">→</span>';
     }
+  }
   }
 
   runButtons.forEach((button) => button.addEventListener("click", runAnalysis));
@@ -706,7 +729,7 @@
     button.disabled = true;
     button.textContent = "Saving…";
     try {
-      const response = await fetch("/api/schedule", {
+      const response = await authFetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -749,5 +772,22 @@
       ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`
       : "CSV uploads support 500,000+ rows (up to 500 MB) and need timestamp, task_id, status, duration, cpu_usage, memory_usage, io_throughput, and latency.";
   });
+
+  // Logout handler
+  const logoutBtn = $("#logout-button");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await authFetch("/api/auth/logout", { method: "POST" });
+      } catch (e) {
+        console.warn("Logout request failed:", e);
+      }
+      if (window.PipelineAuth) {
+        window.PipelineAuth.logout();
+      } else {
+        window.location.href = "/login";
+      }
+    });
+  }
 
 })();

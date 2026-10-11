@@ -17,6 +17,8 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
+from auth import AuthManager
+from auth_routes import auth_bp
 from bottleneck_predictor import BottleneckPredictor
 from csv_input import read_csv_table
 from data_quality import DataQualityValidator
@@ -30,6 +32,18 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024   # 500 MB upload limit
 app.config["STATE_DB_PATH"] = Path("pipeline_state.sqlite3")
 app.config["SCHEDULE_DATA_DIR"] = Path("data") / "incoming"
+app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET", secrets.token_urlsafe(32))
+
+# Initialize authentication manager
+auth_manager = AuthManager(
+    db_path=app.config["STATE_DB_PATH"],
+    jwt_secret=app.config["JWT_SECRET"],
+    jwt_expiry_hours=24
+)
+app.config["AUTH_MANAGER"] = auth_manager
+
+# Register auth blueprint
+app.register_blueprint(auth_bp)
 
 _state_lock = threading.RLock()
 _analysis_lock = threading.Lock()
@@ -515,6 +529,16 @@ _load_persistent_state()
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.get("/login")
+def login_page():
+    return render_template("login.html")
+
+
+@app.get("/signup")
+def signup_page():
+    return render_template("signup.html")
 
 
 @app.post("/api/analyze")
