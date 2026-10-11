@@ -98,8 +98,12 @@ class AuthManager:
 
     def hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
+        # bcrypt has a 72-byte limit; truncate if necessary
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
         salt = bcrypt.gensalt(rounds=12)
-        return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+        return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
 
     def create_user(self, email: str, password: str) -> User:
         """Create a new user."""

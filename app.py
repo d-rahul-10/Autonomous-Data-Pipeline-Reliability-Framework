@@ -17,7 +17,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-from auth import AuthManager
+from auth import AuthManager, require_auth
 from auth_routes import auth_bp
 from bottleneck_predictor import BottleneckPredictor
 from csv_input import read_csv_table
@@ -542,6 +542,7 @@ def signup_page():
 
 
 @app.post("/api/analyze")
+@require_auth
 def analyze():
     cfg = build_config()
     cfg.backoff_base_s = 0.1
@@ -586,6 +587,7 @@ def analyze():
 
 
 @app.get("/api/analyze/jobs/<job_id>")
+@require_auth
 def get_analysis_job(job_id):
     _cleanup_old_jobs()
     with _analysis_jobs_lock:
@@ -596,6 +598,7 @@ def get_analysis_job(job_id):
 
 
 @app.get("/api/analyze/jobs")
+@require_auth
 def list_analysis_jobs():
     _cleanup_old_jobs()
     with _analysis_jobs_lock:
@@ -608,6 +611,7 @@ def list_analysis_jobs():
 
 
 @app.get("/api/status")
+@require_auth
 def status():
     with _state_lock:
         return jsonify(
@@ -618,6 +622,7 @@ def status():
 
 
 @app.get("/api/history")
+@require_auth
 def history():
     with _state_lock:
         items = [{
@@ -635,6 +640,7 @@ def history():
 
 
 @app.get("/api/reports")
+@require_auth
 def reports():
     report_dir = Path(build_config().report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -652,6 +658,7 @@ def reports():
 
 
 @app.get("/api/reports/<path:filename>")
+@require_auth
 def download_report(filename):
     if not re.fullmatch(r"report_[A-Za-z0-9_-]+\.(?:json|md)", filename):
         return jsonify(error="Invalid report filename."), 400
@@ -662,6 +669,7 @@ def download_report(filename):
 
 
 @app.get("/api/logs")
+@require_auth
 def logs():
     try:
         limit = max(1, min(int(request.args.get("limit", 200)), 1000))
@@ -679,6 +687,7 @@ def logs():
 
 
 @app.get("/api/monitor")
+@require_auth
 def monitor():
     with _state_lock:
         recent_runs = [{
@@ -691,11 +700,13 @@ def monitor():
 
 
 @app.get("/api/schedule")
+@require_auth
 def get_schedule():
     return jsonify(schedule=_schedule_response())
 
 
 @app.get("/api/schedule/datasets")
+@require_auth
 def schedule_datasets():
     incoming_dir = Path(app.config["SCHEDULE_DATA_DIR"])
     incoming_dir.mkdir(parents=True, exist_ok=True)
@@ -708,6 +719,7 @@ def schedule_datasets():
 
 
 @app.post("/api/schedule/datasets")
+@require_auth
 def upload_schedule_dataset():
     upload = request.files.get("file")
     if not upload or not upload.filename:
@@ -738,6 +750,7 @@ def upload_schedule_dataset():
 
 
 @app.post("/api/schedule")
+@require_auth
 def configure_schedule():
     global _scheduler_thread, _schedule_version
     payload = request.get_json(silent=True)
@@ -798,6 +811,7 @@ def configure_schedule():
 
 
 @app.post("/api/recovery-demo")
+@require_auth
 def recovery_demo():
     global _latest_recovery
     cfg = build_config()
