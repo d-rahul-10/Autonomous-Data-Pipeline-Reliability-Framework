@@ -16,6 +16,7 @@ from data_quality import DataQualityValidator
 from failure_detector import FailureDetector
 from logging_utils import get_logger
 from monitor import PipelineMonitor
+from pipeline_core import _read_pipeline_csv, build_config
 from recovery import RecoveryManager
 from reporter import Reporter
 from scheduler import Scheduler
@@ -30,35 +31,6 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
-
-
-def _read_pipeline_csv(path, cfg: Config) -> pd.DataFrame:
-    df = read_csv_table(path, low_memory=False)
-    needed = [
-        cfg.col_timestamp, cfg.col_task, cfg.col_status, cfg.col_duration,
-        cfg.col_cpu, cfg.col_memory, cfg.col_io, cfg.col_latency,
-    ]
-    missing = [column for column in needed if column not in df.columns]
-    if missing:
-        raise ValueError(
-            "CSV was read, but it is not in the ETL pipeline-log format this project "
-            f"analyzes; missing required columns: {missing}."
-        )
-    if cfg.col_error not in df.columns:
-        df[cfg.col_error] = None
-    if cfg.col_deps not in df.columns:
-        df[cfg.col_deps] = ""
-    df[cfg.col_timestamp] = pd.to_datetime(df[cfg.col_timestamp], errors="coerce")
-    return df
-
-
-def build_config() -> Config:
-    cfg = Config()
-    cfg.schema = {cfg.col_duration: "float", cfg.col_cpu: "float", cfg.col_memory: "float",
-                  cfg.col_io: "float", cfg.col_latency: "float", cfg.col_timestamp: "datetime"}
-    cfg.required_columns = [cfg.col_timestamp, cfg.col_task, cfg.col_status, cfg.col_duration]
-    cfg.not_null_columns = [cfg.col_timestamp, cfg.col_task, cfg.col_duration]
-    return cfg
 
 
 def demo_live_pipeline(cfg: Config) -> dict:

@@ -2,6 +2,47 @@
   "use strict";
 
   const $ = (selector) => document.querySelector(selector);
+  const motionReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const gsap = window.gsap;
+  let revealObserver = null;
+  const revealSelector = ".section-heading,.metric-card,.panel,.welcome-card,.source-panel,.tab-empty-state,.footer";
+
+  function observeReveals(root = document) {
+    if (!revealObserver) return;
+    const elements = [];
+    if (root instanceof Element && root.matches(revealSelector)) elements.push(root);
+    elements.push(...root.querySelectorAll(revealSelector));
+    elements.forEach((element) => {
+      element.dataset.motionReveal = "";
+      if (element.dataset.motionObserved) return;
+      element.dataset.motionObserved = "true";
+      revealObserver.observe(element);
+    });
+  }
+
+  function initializeMotion() {
+    if (!gsap || motionReduced || !("IntersectionObserver" in window)) return;
+    document.documentElement.classList.add("motion-ready");
+    revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry, index) => {
+        if (!entry.isIntersecting) return;
+        revealObserver.unobserve(entry.target);
+        gsap.fromTo(entry.target,
+          { autoAlpha: 0, y: 16 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.48,
+            delay: Math.min(index * 0.035, 0.14),
+            ease: "power2.out",
+            clearProps: "opacity,visibility,transform"
+          });
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -32px 0px" });
+    observeReveals();
+  }
+
+  initializeMotion();
   const runButtons = [
     $("#run-analysis"),
     $("#welcome-run"),
@@ -15,6 +56,28 @@
   let qualityIssues = [];
   let currentAnalysis = null;
   let statusPollInProgress = false;
+
+  // Auth integration
+  function getAuthToken() {
+    return window.PipelineAuth?.getToken?.() || null;
+  }
+
+  function authFetch(url, options = {}) {
+    const token = getAuthToken();
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetch(url, { ...options, headers });
+  }
+
+  // Override fetch for API calls to include auth
+  const originalFetch = window.fetch.bind(window);
+  window.authFetch = authFetch;
+
   const tabTitles = {
     overview: { title: "Overview", subtitle: "A clear view of your pipeline health, performance, and risks." },
     health: { title: "Task health", subtitle: "Compare run volume, detected failures, and duration by task." },
@@ -110,7 +173,7 @@
     if (statusPollInProgress || document.visibilityState === "hidden") return;
     statusPollInProgress = true;
     try {
-      const state = await readResponse(await fetch("/api/status"));
+      const state = await readResponse(await authFetch("/api/status"));
       setSystemStatus(Boolean(state.ready), state.schedule);
       if (state.latest_analysis && !$("#run-analysis").disabled &&
           state.latest_analysis.generated_at !== currentAnalysis?.generated_at) {
@@ -135,6 +198,8 @@
       const selected = link.dataset.tab === tab;
       link.classList.toggle("active", selected);
       link.setAttribute("aria-selected", String(selected));
+      link.setAttribute("aria-label", link.textContent.trim());
+      link.title = link.textContent.trim();
       link.tabIndex = selected ? 0 : -1;
     });
     $(".breadcrumbs strong").textContent = tabTitles[tab].title;
@@ -153,6 +218,15 @@
     $("#quality-empty").hidden = tab !== "quality" || hasAnalysis;
     $("#performance-empty").hidden = tab !== "performance" || hasAnalysis;
     $("#monitor-empty").hidden = true;
+    const activeView = [...document.querySelectorAll("[data-tab-view],.tab-empty-state,.welcome-card")]
+      .find((view) => !view.hidden);
+    if (activeView && gsap && !motionReduced) {
+      gsap.killTweensOf(activeView);
+      gsap.fromTo(activeView,
+        { autoAlpha: 0, y: 10 },
+        { autoAlpha: 1, y: 0, duration: 0.3, ease: "power2.out", clearProps: "opacity,visibility,transform" });
+    }
+    observeReveals();
 
     if (updateHistory && window.location.hash !== tabHashes[tab]) {
       window.history.pushState({ tab }, "", tabHashes[tab]);
@@ -195,7 +269,7 @@
     }
 
     try {
-      const response = await fetch("/api/analyze", { method: "POST", body: form });
+      const response = await authFetch("/api/analyze", { method: "POST", body: form });
       renderResults(await readResponse(response));
       setSystemStatus(true);
       $("#last-run").textContent = `Updated ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date())}`;
@@ -250,6 +324,8 @@
     renderRisks(Array.isArray(data.top_risk) ? data.top_risk : []);
     renderDetailedQuality(data);
     renderPerformance(data);
+    observeReveals();
+    observeReveals();
     if (activeTab === "monitor") void loadTabData("monitor");
     if (activeTab === "reports") void loadTabData("reports");
     if (activeTab === "scheduler") void loadTabData("scheduler");
@@ -413,21 +489,21 @@
         renderPerformance(currentAnalysis);
       } else if (tab === "reports") {
         const [reportData, historyData] = await Promise.all([
-          readResponse(await fetch("/api/reports")),
-          readResponse(await fetch("/api/history"))
+          readResponse(await authFetch("/api/reports")),
+          readResponse(await authFetch("/api/history"))
         ]);
         renderReports(reportData.reports || []);
         renderHistory(historyData.history || []);
       } else if (tab === "monitor") {
         const [monitorData, logData] = await Promise.all([
-          readResponse(await fetch("/api/monitor")),
-          readResponse(await fetch("/api/logs?limit=150"))
+          readResponse(await authFetch("/api/monitor")),
+          readResponse(await authFetch("/api/logs?limit=150"))
         ]);
         renderMonitor(monitorData, logData.logs || []);
       } else if (tab === "scheduler") {
         const [scheduleData, datasetData] = await Promise.all([
-          readResponse(await fetch("/api/schedule")),
-          readResponse(await fetch("/api/schedule/datasets"))
+          readResponse(await authFetch("/api/schedule")),
+          readResponse(await authFetch("/api/schedule/datasets"))
         ]);
         renderScheduleDatasets(datasetData.datasets || [], scheduleData.schedule.dataset_name);
         renderSchedule(scheduleData.schedule);
@@ -576,9 +652,9 @@
     try {
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch("/api/schedule/datasets", { method: "POST", body: form });
+      const response = await authFetch("/api/schedule/datasets", { method: "POST", body: form });
       const data = await readResponse(response);
-      const datasets = await readResponse(await fetch("/api/schedule/datasets"));
+      const datasets = await readResponse(await authFetch("/api/schedule/datasets"));
       renderScheduleDatasets(datasets.datasets || [], data.dataset.name);
       $("#schedule-source").value = "csv";
       syncScheduleSourceControls();
@@ -592,7 +668,7 @@
     }
   }
 
-  async function runRecoveryDemo() {
+async function runRecoveryDemo() {
     clearNotice();
     const button = document.activeElement?.closest("#recovery-button, #monitor-recovery-button") || $("#recovery-button");
     const result = $("#recovery-result");
@@ -600,18 +676,19 @@
     button.textContent = "Running demo…";
     result.hidden = true;
     try {
-      const response = await fetch("/api/recovery-demo", { method: "POST" });
+      const response = await authFetch("/api/recovery-demo", { method: "POST" });
       const data = await readResponse(response);
       const recovery = data.recovery || {};
       result.textContent = `Recovery demo complete · ${number(data.rows_loaded)} rows loaded · ${number(recovery.recovered || 0)} tasks recovered on retry · ${number(recovery.non_recoverable || 0)} issue${Number(recovery.non_recoverable || 0) === 1 ? "" : "s"} escalated as expected.`;
       result.hidden = false;
       if (activeTab === "monitor") await loadTabData("monitor");
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "The recovery demo couldn’t be completed.");
+      showNotice(error instanceof Error ? error.message : "The recovery demo couldn't be completed.");
     } finally {
       button.disabled = false;
       button.innerHTML = 'Run recovery demo <span aria-hidden="true">→</span>';
     }
+  }
   }
 
   runButtons.forEach((button) => button.addEventListener("click", runAnalysis));
@@ -624,6 +701,21 @@
     activateTab(link.dataset.tab);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }));
+  document.querySelector(".side-nav").addEventListener("keydown", (event) => {
+    const links = [...document.querySelectorAll(".side-nav [data-tab]")];
+    const currentIndex = links.indexOf(document.activeElement);
+    if (currentIndex < 0) return;
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") nextIndex += 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") nextIndex -= 1;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = links.length - 1;
+    else return;
+    event.preventDefault();
+    const nextLink = links[(nextIndex + links.length) % links.length];
+    nextLink.focus();
+    activateTab(nextLink.dataset.tab);
+  });
   window.addEventListener("popstate", () => {
     const hash = window.location.hash;
     const tab = Object.keys(tabHashes).find((name) => tabHashes[name] === hash) || "overview";
@@ -637,7 +729,7 @@
     button.disabled = true;
     button.textContent = "Saving…";
     try {
-      const response = await fetch("/api/schedule", {
+      const response = await authFetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -680,5 +772,22 @@
       ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`
       : "CSV uploads support 500,000+ rows (up to 500 MB) and need timestamp, task_id, status, duration, cpu_usage, memory_usage, io_throughput, and latency.";
   });
+
+  // Logout handler
+  const logoutBtn = $("#logout-button");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await authFetch("/api/auth/logout", { method: "POST" });
+      } catch (e) {
+        console.warn("Logout request failed:", e);
+      }
+      if (window.PipelineAuth) {
+        window.PipelineAuth.logout();
+      } else {
+        window.location.href = "/login";
+      }
+    });
+  }
 
 })();
