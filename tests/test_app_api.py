@@ -44,6 +44,24 @@ flask_app.config.update(TESTING=True)
 class ApplicationApiTests(unittest.TestCase):
     def setUp(self):
         self.client = flask_app.test_client()
+        self._auth_token = self._get_auth_token()
+
+    def _get_auth_token(self):
+        """Sign up a test user and return the JWT token."""
+        # Use a unique email to avoid conflicts
+        import uuid
+        email = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        response = self.client.post("/api/auth/signup", json={
+            "email": email,
+            "password": "password123",
+            "confirm_password": "password123"
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        return response.get_json()["token"]
+
+    def _auth_headers(self):
+        """Return headers with Authorization Bearer token."""
+        return {"Authorization": f"Bearer {self._auth_token}"}
 
     def test_json_default_serializes_numpy_values_and_timestamps(self):
         payload = {
@@ -81,39 +99,40 @@ class ApplicationApiTests(unittest.TestCase):
             "/api/schedule/datasets",
         ):
             with self.subTest(endpoint=endpoint):
-                response = self.client.get(endpoint)
+                response = self.client.get(endpoint, headers=self._auth_headers())
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.mimetype, "application/json")
 
     def test_analysis_persists_history_and_downloadable_reports(self):
-        response = self.client.post("/api/analyze", data={"rows": "1000"})
+        response = self.client.post("/api/analyze", data={"rows": "1000"}, headers=self._auth_headers())
 
         self.assertEqual(response.status_code, 200, response.get_json())
         result = response.get_json()
         self.assertGreaterEqual(result["rows_clean"], 200)
         self.assertEqual(result["failures"]["records"], result["rows_clean"])
         self.assertTrue(result["report_file"].startswith("report_"))
-        report_response = self.client.get("/api/reports/" + result["report_file"])
+        report_response = self.client.get("/api/reports/" + result["report_file"], headers=self._auth_headers())
         try:
             self.assertEqual(report_response.status_code, 200)
         finally:
             report_response.close()
 
-        history = self.client.get("/api/history").get_json()["history"]
+        history = self.client.get("/api/history", headers=self._auth_headers()).get_json()["history"]
         self.assertEqual(history[0]["generated_at"], result["generated_at"])
         self.assertEqual(
-            self.client.get("/api/status").get_json()["latest_analysis"]["generated_at"],
+            self.client.get("/api/status", headers=self._auth_headers()).get_json()["latest_analysis"]["generated_at"],
             result["generated_at"],
         )
 
     def test_invalid_analysis_inputs_return_client_errors(self):
-        invalid_rows = self.client.post("/api/analyze", data={"rows": "many"})
+        invalid_rows = self.client.post("/api/analyze", data={"rows": "many"}, headers=self._auth_headers())
         self.assertEqual(invalid_rows.status_code, 400)
 
         invalid_csv = self.client.post(
             "/api/analyze",
             data={"file": (io.BytesIO(b"not,a,pipeline,csv\n1,2,3,4\n"), "logs.csv")},
             content_type="multipart/form-data",
+            headers=self._auth_headers(),
         )
         self.assertEqual(invalid_csv.status_code, 400)
 
@@ -121,6 +140,7 @@ class ApplicationApiTests(unittest.TestCase):
             "/api/analyze",
             data={"file": (io.BytesIO(b"data"), "logs.txt")},
             content_type="multipart/form-data",
+            headers=self._auth_headers(),
         )
         self.assertEqual(invalid_extension.status_code, 400)
 
@@ -154,6 +174,7 @@ class ApplicationApiTests(unittest.TestCase):
             "/api/analyze",
             data={"file": (io.BytesIO(csv_content.encode("utf-8")), "population_data.csv")},
             content_type="multipart/form-data",
+            headers=self._auth_headers(),
         )
 
         self.assertEqual(response.status_code, 400)
@@ -169,6 +190,7 @@ class ApplicationApiTests(unittest.TestCase):
                 "/api/analyze",
                 data=b"x" * 64,
                 content_type="application/octet-stream",
+                headers=self._auth_headers(),
             )
         finally:
             flask_app.config["MAX_CONTENT_LENGTH"] = original_limit
@@ -176,22 +198,25 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
 
     def test_scheduler_rejects_non_object_json_and_invalid_values(self):
-        non_object = self.client.post("/api/schedule", json=["not", "an object"])
+        non_object = self.client.post("/api/schedule", json=["not", "an object"], headers=self._auth_headers())
         self.assertEqual(non_object.status_code, 400)
 
         invalid_interval = self.client.post(
             "/api/schedule",
             json={"enabled": False, "interval_seconds": 1, "rows": 1000},
+            headers=self._auth_headers(),
         )
         self.assertEqual(invalid_interval.status_code, 400)
         fractional_interval = self.client.post(
             "/api/schedule",
             json={"enabled": False, "interval_seconds": 15.5, "rows": 1000},
+            headers=self._auth_headers(),
         )
         self.assertEqual(fractional_interval.status_code, 400)
         invalid_enabled = self.client.post(
             "/api/schedule",
             json={"enabled": "sometimes", "interval_seconds": 15, "rows": 1000},
+            headers=self._auth_headers(),
         )
         self.assertEqual(invalid_enabled.status_code, 400)
         missing_dataset = self.client.post(
@@ -203,6 +228,7 @@ class ApplicationApiTests(unittest.TestCase):
                 "source_type": "csv",
                 "dataset_name": "missing.csv",
             },
+            headers=self._auth_headers(),
         )
         self.assertEqual(missing_dataset.status_code, 400)
 
@@ -214,6 +240,7 @@ class ApplicationApiTests(unittest.TestCase):
                 "rows": 1000,
                 "source_type": "sample",
             },
+            headers=self._auth_headers(),
         )
         self.assertEqual(valid.status_code, 200, valid.get_json())
         self.assertFalse(valid.get_json()["schedule"]["enabled"])
@@ -224,21 +251,23 @@ class ApplicationApiTests(unittest.TestCase):
             "/api/schedule/datasets",
             data={"file": (io.BytesIO(csv_content), "pipeline.csv")},
             content_type="multipart/form-data",
+            headers=self._auth_headers(),
         )
         self.assertEqual(uploaded.status_code, 201, uploaded.get_json())
 
-        datasets = self.client.get("/api/schedule/datasets").get_json()["datasets"]
+        datasets = self.client.get("/api/schedule/datasets", headers=self._auth_headers()).get_json()["datasets"]
         self.assertIn("pipeline.csv", [dataset["name"] for dataset in datasets])
 
         invalid = self.client.post(
             "/api/schedule/datasets",
             data={"file": (io.BytesIO(b"bad"), "pipeline.txt")},
             content_type="multipart/form-data",
+            headers=self._auth_headers(),
         )
         self.assertEqual(invalid.status_code, 400)
 
     def test_recovery_demo_executes_retry_workflow(self):
-        response = self.client.post("/api/recovery-demo")
+        response = self.client.post("/api/recovery-demo", headers=self._auth_headers())
 
         self.assertEqual(response.status_code, 200, response.get_json())
         result = json.loads(response.get_data(as_text=True), parse_constant=self._reject_json_constant)
@@ -257,7 +286,7 @@ class ApplicationApiTests(unittest.TestCase):
 
     def test_recovery_demo_redacts_internal_errors(self):
         with patch("app.demo_live_pipeline", side_effect=RuntimeError("C:\\private\\secret.csv")):
-            response = self.client.post("/api/recovery-demo")
+            response = self.client.post("/api/recovery-demo", headers=self._auth_headers())
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(
@@ -320,6 +349,25 @@ class ApplicationSchedulerTests(unittest.TestCase):
                 "CREATE TABLE IF NOT EXISTS analysis_history "
                 "(generated_at TEXT PRIMARY KEY, payload TEXT NOT NULL)"
             )
+        
+        # Get auth token for tests
+        self._auth_token = self._get_auth_token()
+
+    def _get_auth_token(self):
+        """Sign up a test user and return the JWT token."""
+        import uuid
+        email = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        response = self.client.post("/api/auth/signup", json={
+            "email": email,
+            "password": "password123",
+            "confirm_password": "password123"
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        return response.get_json()["token"]
+
+    def _auth_headers(self):
+        """Return headers with Authorization Bearer token."""
+        return {"Authorization": f"Bearer {self._auth_token}"}
 
     def tearDown(self):
         application = self.application
@@ -345,7 +393,7 @@ class ApplicationSchedulerTests(unittest.TestCase):
             "interval_seconds": 15,
             "rows": 1000,
             "source_type": "sample",
-        })
+        }, headers=self._auth_headers())
         self.assertEqual(response.status_code, 200, response.get_json())
 
     def _disable_schedule(self):
@@ -354,7 +402,7 @@ class ApplicationSchedulerTests(unittest.TestCase):
             "interval_seconds": 15,
             "rows": 1000,
             "source_type": "sample",
-        })
+        }, headers=self._auth_headers())
         self.assertEqual(response.status_code, 200, response.get_json())
 
     def test_restart_restores_overdue_schedule_without_losing_due_timestamp(self):
