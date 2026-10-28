@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d14">
+  <meta name="description" content="Sign in or create an account for PipelineIQ">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Sign In — PipelineIQ</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css', v='20261026-auth') }}">
+</head>
+<body class="auth-page">
+  <!-- Background Pattern -->
+  <div class="auth-background" aria-hidden="true">
+    <div class="bg-pattern"></div>
+    <div class="bg-gradient"></div>
+  </div>
+
+  <!-- Main Auth Container -->
+  <main class="auth-container">
+    <!-- Branding -->
+    <section class="auth-brand" aria-label="PipelineIQ overview">
+      <a href="/" aria-label="PipelineIQ home">
+        <svg viewBox="0 0 32 32" fill="none" class="brand-logo">
+          <path d="M5 22.5h5.5l3.2-13 4.6 17 3.1-11h5.6" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="5" cy="22.5" r="2" fill="currentColor"/>
+          <circle cx="27" cy="15.5" r="2" fill="currentColor"/>
+        </svg>
+        <span class="brand-text">Pipeline<span class="brand-accent">IQ</span></span>
+      </a>
+      <div class="brand-copy">
+        <p class="eyebrow"><span class="status-pulse"></span> PIPELINE RELIABILITY WORKSPACE</p>
+        <h1>Every pipeline.<br><span>One clear view.</span></h1>
+        <p class="brand-description">Monitor execution, catch data issues, and recover from failures from one place.</p>
+      </div>
+      <div class="workspace-preview" aria-label="Workspace capabilities">
+        <div class="preview-heading"><span>WORKSPACE SYSTEMS</span><span class="preview-live">READY</span></div>
+        <div class="preview-row"><span class="preview-icon">01</span><span>Pipeline monitoring</span><span class="preview-check">●</span></div>
+        <div class="preview-row"><span class="preview-icon">02</span><span>Data quality checks</span><span class="preview-check">●</span></div>
+        <div class="preview-row"><span class="preview-icon">03</span><span>Failure recovery</span><span class="preview-check">●</span></div>
+      </div>
+    </section>
+
+    <!-- Auth Card -->
+    <div class="auth-card" role="region" aria-label="Authentication">
+      <!-- Tab Navigation -->
+      <div class="auth-tabs" role="tablist">
+        <button 
+          id="tab-login" 
+          class="auth-tab active" 
+          role="tab" 
+          aria-selected="true" 
+          aria-controls="panel-login"
+          data-tab="login">
+          Sign In
+        </button>
+        <button 
+          id="tab-signup" 
+          class="auth-tab" 
+          role="tab" 
+          aria-selected="false" 
+          aria-controls="panel-signup"
+          data-tab="signup">
+          Create Account
+        </button>
+        <span class="tab-indicator" aria-hidden="true"></span>
+      </div>
+
+      <!-- Success Message -->
+      <div id="success-message" class="auth-message success" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div>
+          <strong id="success-title">Success!</strong>
+          <p id="success-text"></p>
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      <div id="error-message" class="auth-message error" role="alert" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div>
+          <strong id="error-title">Error</strong>
+          <p id="error-text"></p>
+        </div>
+        <button class="message-close" aria-label="Dismiss" data-close-message="error">&times;</button>
+      </div>
+
+      <!-- Login Panel -->
+      <div id="panel-login" class="auth-panel active" role="tabpanel" aria-labelledby="tab-login">
+        <div class="panel-header">
+          <h1>Welcome back</h1>
+          <p>Sign in to your PipelineIQ workspace</p>
+        </div>
+
+        <form id="login-form" class="auth-form" novalidate>
+          <!-- Email/Username Field -->
+          <div class="form-group">
+            <label for="login-email" class="form-label">Email address</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              </svg>
+              <input 
+                type="text" 
+                id="login-email" 
+                name="email" 
+                class="form-input" 
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+                aria-required="true"
+                aria-describedby="login-email-error">
+            </div>
+            <span id="login-email-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Password Field -->
+          <div class="form-group">
+            <label for="login-password" class="form-label">Password</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+              </svg>
+              <input 
+                type="password" 
+                id="login-password" 
+                name="password" 
+                class="form-input" 
+                placeholder="Enter your password"
+                autocomplete="current-password"
+                required
+                aria-required="true"
+                aria-describedby="login-password-error">
+              <button type="button" class="password-toggle" aria-label="Toggle password visibility" data-input="login-password">
+                <svg class="eye-open" viewBox="0 0 24 24">
+                  <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" hidden>
+                  <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                </svg>
+              </button>
+            </div>
+            <span id="login-password-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Remember & Forgot -->
+          <div class="form-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="remember-me" name="remember">
+              <span class="checkbox-custom"></span>
+              <span>Remember me</span>
+            </label>
+            <a href="/auth#support" class="link-secondary">Forgot password?</a>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="btn-primary" id="login-submit">
+            <span class="btn-text">Sign In</span>
+            <span class="btn-loader" hidden>
+              <svg viewBox="0 0 24 24" class="spinner">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0110 10" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>
+              </svg>
+            </span>
+          </button>
+        </form>
+
+        <!-- Social Login -->
+        <div class="social-divider">
+          <span>Or continue with</span>
+        </div>
+
+        <div class="social-buttons">
+          <button type="button" class="btn-social" data-provider="google">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            <span>Google</span>
+          </button>
+          <button type="button" class="btn-social" data-provider="github">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+            </svg>
+            <span>GitHub</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Signup Panel -->
+      <div id="panel-signup" class="auth-panel" role="tabpanel" aria-labelledby="tab-signup" hidden>
+        <div class="panel-header">
+          <h1>Create your account</h1>
+          <p>Get started with PipelineIQ today</p>
+        </div>
+
+        <form id="signup-form" class="auth-form" novalidate>
+          <!-- Full Name Field -->
+          <div class="form-group">
+            <label for="signup-name" class="form-label">Full Name</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+              </svg>
+              <input 
+                type="text" 
+                id="signup-name" 
+                name="name" 
+                class="form-input" 
+                placeholder="John Doe"
+                autocomplete="name"
+                required
+                aria-required="true"
+                aria-describedby="signup-name-error">
+            </div>
+            <span id="signup-name-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Email Field -->
+          <div class="form-group">
+            <label for="signup-email" class="form-label">Email Address</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              </svg>
+              <input 
+                type="email" 
+                id="signup-email" 
+                name="email" 
+                class="form-input" 
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+                aria-required="true"
+                aria-describedby="signup-email-error">
+            </div>
+            <span id="signup-email-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Password Field -->
+          <div class="form-group">
+            <label for="signup-password" class="form-label">Password</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+              </svg>
+              <input 
+                type="password" 
+                id="signup-password" 
+                name="password" 
+                class="form-input" 
+                placeholder="Create a strong password"
+                autocomplete="new-password"
+                required
+                aria-required="true"
+                aria-describedby="signup-password-error signup-password-strength">
+              <button type="button" class="password-toggle" aria-label="Toggle password visibility" data-input="signup-password">
+                <svg class="eye-open" viewBox="0 0 24 24">
+                  <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" hidden>
+                  <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                </svg>
+              </button>
+            </div>
+            <div id="signup-password-strength" class="password-strength">
+              <div class="strength-meter">
+                <div class="strength-bar"></div>
+              </div>
+              <span class="strength-text">Password strength: <strong>None</strong></span>
+            </div>
+            <span id="signup-password-error" class="form-error" role="alert"></span>
+            <p class="form-hint">Must be at least 8 characters with uppercase, lowercase, and a number</p>
+          </div>
+
+          <!-- Confirm Password Field -->
+          <div class="form-group">
+            <label for="signup-confirm" class="form-label">Confirm Password</label>
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <input 
+                type="password" 
+                id="signup-confirm" 
+                name="confirm" 
+                class="form-input" 
+                placeholder="Confirm your password"
+                autocomplete="new-password"
+                required
+                aria-required="true"
+                aria-describedby="signup-confirm-error">
+            </div>
+            <span id="signup-confirm-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Terms Checkbox -->
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="terms-agree" name="terms" required aria-required="true">
+              <span class="checkbox-custom"></span>
+              <span>I agree to the <a href="#terms" class="link-inline">Terms of Service</a> and <a href="#privacy" class="link-inline">Privacy Policy</a></span>
+            </label>
+            <span id="terms-error" class="form-error" role="alert"></span>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="btn-primary" id="signup-submit">
+            <span class="btn-text">Create Account</span>
+            <span class="btn-loader" hidden>
+              <svg viewBox="0 0 24 24" class="spinner">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0110 10" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>
+              </svg>
+            </span>
+          </button>
+        </form>
+
+        <!-- Social Signup -->
+        <div class="social-divider">
+          <span>Or sign up with</span>
+        </div>
+
+        <div class="social-buttons">
+          <button type="button" class="btn-social" data-provider="google" data-action="signup">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            <span>Google</span>
+          </button>
+          <button type="button" class="btn-social" data-provider="github" data-action="signup">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+            </svg>
+            <span>GitHub</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="auth-footer">
+      <p>&copy; 2026 PipelineIQ. All rights reserved.</p>
+      <nav>
+        <a href="/auth#privacy">Privacy Policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="/auth#terms">Terms of Service</a>
+        <span aria-hidden="true">·</span>
+        <a href="/auth#support">Support</a>
+      </nav>
+    </footer>
+
+    <dialog class="auth-info-dialog" id="auth-info-dialog" aria-label="PipelineIQ information">
+      <div class="auth-info-dialog-head">
+        <span>PipelineIQ information</span>
+        <button type="button" class="auth-info-close" id="auth-info-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="auth-info-sections">
+      <section class="auth-info-card" id="privacy" tabindex="-1" aria-labelledby="privacy-heading" hidden>
+        <p class="eyebrow">PIPELINEIQ POLICIES</p>
+        <h2 id="privacy-heading">Privacy Policy</h2>
+        <p>PipelineIQ uses the account name and email address you provide to create and manage your sign-in. Passwords are stored as secure hashes and are not saved as readable text.</p>
+        <p>Pipeline logs and CSV files you submit are processed by the application to validate data, analyze pipeline reliability, and create reports. Application data and generated reports are stored in the app’s configured local storage. Avoid uploading passwords, access tokens, or other secrets in pipeline files.</p>
+        <p>The app uses a session cookie to keep you signed in. You can end that session with the Log out control. Local data may remain in the configured storage after you log out; contact support if you need help removing it.</p>
+      </section>
+
+      <section class="auth-info-card" id="terms" tabindex="-1" aria-labelledby="terms-heading" hidden>
+        <p class="eyebrow">PIPELINEIQ POLICIES</p>
+        <h2 id="terms-heading">Terms of Service</h2>
+        <p>Use PipelineIQ only with data you are authorized to access and analyze. You are responsible for the data you upload and for keeping copies of any source files and reports you need.</p>
+        <p>PipelineIQ provides automated checks and predictions to help review pipeline reliability. Review important findings before acting on them; analysis may be incomplete or inaccurate for some datasets.</p>
+        <p>Do not use the service to disrupt systems, access another person’s account, or upload unlawful or harmful content. The application is provided as-is for pipeline monitoring and analysis.</p>
+      </section>
+
+      <section class="auth-info-card" id="support" tabindex="-1" aria-labelledby="support-heading" hidden>
+        <p class="eyebrow">WE’RE HERE TO HELP</p>
+        <h2 id="support-heading">Support</h2>
+        <p>For help with sign-in, data uploads, analysis, or account access, email:</p>
+        <a class="support-email" href="mailto:devallarahul2@gmail.com">devallarahul2@gmail.com</a>
+      </section>
+      </div>
+    </dialog>
+  </main>
+
+  <script type="module" src="{{ url_for('static', filename='auth.js', v='20261026c') }}" defer></script>
+</body>
+</html>

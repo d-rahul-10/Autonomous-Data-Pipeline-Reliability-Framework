@@ -1,0 +1,99 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+127.0.0.1 - - [26/Oct/2026 20:25:33] "GET /healthz HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:25:33] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [26/Oct/2026 20:25:33] "GET /auth HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:25:33] "GET /auth HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "POST /api/auth/signup HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "POST /api/auth/login HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "POST /api/auth/signup HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "GET /api/status HTTP/1.1" 401 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "POST /api/auth/login HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:26:02] "POST /api/auth/signup HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "GET /auth HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "POST /api/auth/signup HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "POST /api/auth/login HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "GET /api/status HTTP/1.1" 200 -
+[2026-10-26 20:27:00,779] ERROR in app: Exception on /api/auth/me [GET]
+Traceback (most recent call last):
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\api\auth.py", line 176, in get_current_user
+    user = UserRepository(_config()).find_by_id(user_id)
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\repositories\users.py", line 30, in find_by_id
+    with connect(self.config) as connection:
+         ^^^^^^^
+NameError: name 'connect' is not defined
+[2026-10-26 20:27:00,836] ERROR in middleware: unhandled server error
+Traceback (most recent call last):
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\api\auth.py", line 176, in get_current_user
+    user = UserRepository(_config()).find_by_id(user_id)
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\repositories\users.py", line 30, in find_by_id
+    with connect(self.config) as connection:
+         ^^^^^^^
+NameError: name 'connect' is not defined
+127.0.0.1 - - [26/Oct/2026 20:27:00] "GET /api/auth/me HTTP/1.1" 500 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "POST /api/analyze HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "POST /api/schedule HTTP/1.1" 403 -
+127.0.0.1 - - [26/Oct/2026 20:27:00] "GET /api/schedule HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:19] "GET /auth HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:19] "POST /api/auth/signup HTTP/1.1" 400 -
+127.0.0.1 - - [26/Oct/2026 20:28:19] "GET /auth HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:20] "POST /api/auth/login HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:20] "GET /auth HTTP/1.1" 302 -
+127.0.0.1 - - [26/Oct/2026 20:28:20] "GET / HTTP/1.1" 200 -
+[2026-10-26 20:28:20,426] ERROR in app: Exception on /api/auth/me [GET]
+Traceback (most recent call last):
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\api\auth.py", line 176, in get_current_user
+    user = UserRepository(_config()).find_by_id(user_id)
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\repositories\users.py", line 30, in find_by_id
+    with connect(self.config) as connection:
+         ^^^^^^^
+NameError: name 'connect' is not defined
+[2026-10-26 20:28:20,428] ERROR in middleware: unhandled server error
+Traceback (most recent call last):
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\D.Rahul\AppData\Local\Programs\Python\Python313\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\api\auth.py", line 176, in get_current_user
+    user = UserRepository(_config()).find_by_id(user_id)
+  File "C:\Users\D.Rahul\Downloads\Autonomous data pipeline reliability framework\app\repositories\users.py", line 30, in find_by_id
+    with connect(self.config) as connection:
+         ^^^^^^^
+NameError: name 'connect' is not defined
+127.0.0.1 - - [26/Oct/2026 20:28:20] "GET /api/auth/me HTTP/1.1" 500 -
+127.0.0.1 - - [26/Oct/2026 20:28:20] "GET /api/status HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:21] "POST /api/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [26/Oct/2026 20:28:21] "POST /api/schedule HTTP/1.1" 200 -

@@ -1,5 +1,17 @@
 # Testing and Reliability Audit
 
+> Historical report: the test count and browser evidence below describe an earlier review. On 2026-10-11, the current test suite was rerun; see the task completion report for current results. Browser automation was not available during that audit.
+
+## Current verification (2026-10-11)
+
+- `python -m unittest discover -s tests`: **56 tests passed**; process exited cleanly with no leaked SQLite connections.
+- `python -m pytest -q -p no:cacheprovider`: **56 tests passed, 26 subtests passed**.
+- Python AST parsing: 20 application/test files parsed successfully; `node --check` passed for both frontend scripts.
+- `python -m pip check`: no broken installed requirements.
+- Production WSGI import/config smoke check passed in an isolated temporary directory; missing production secret was rejected, secure cookie flags/CSP were present, and `/healthz` returned ready.
+- Live HTTP checks confirmed auth page/assets and health check return 200, `/` redirects to `/auth`, and anonymous `/api/status` returns 401.
+- Browser automation and a third-party dependency vulnerability audit were not available/run. Public deployment was not performed.
+
 ## Final status: PASS WITH ISSUES
 
 This status reflects the evidence collected, not a claim that every function or branch is correct. The automated suite passed, and an isolated browser workflow completed. Thread timeouts remain non-enforceable for non-cooperative Python workers; multiple interactions and deployment/security checks remain unverified.

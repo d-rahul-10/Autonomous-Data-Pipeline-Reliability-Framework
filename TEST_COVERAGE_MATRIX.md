@@ -1,5 +1,7 @@
 # Test Coverage Matrix
 
+> Browser-specific PASS entries below are historical evidence from an earlier review. They were not repeated in the 2026-10-11 audit because no browser automation tool was available. The current automated suite and live HTTP checks were rerun.
+
 Status describes executed evidence: PASS = directly tested or exercised in an integration workflow; NOT TESTED = inspected or present but not adequately exercised; BLOCKED = could not run because a required tool/environment was unavailable; FAIL = an executed check failed. PASS does not imply every branch or input combination is covered.
 
 Automated test references are relative to the project root.

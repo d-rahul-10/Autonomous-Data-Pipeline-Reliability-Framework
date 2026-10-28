@@ -32,7 +32,7 @@ class Config:
     # --- Bottleneck prediction ---
     bottleneck_quantile: float = 0.90   # duration above this per-task quantile = bottleneck
     test_fraction: float = 0.2
-    rf_estimators: int = 200
+    rf_estimators: int = 50
     random_state: int = 42
 
     # --- Output ---

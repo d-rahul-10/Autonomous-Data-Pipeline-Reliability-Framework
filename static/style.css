@@ -132,7 +132,7 @@ h1 { margin-bottom: 5px; font: 700 29px/1.25 "Manrope", sans-serif; letter-spaci
 
 .notice { display: flex; align-items: flex-start; gap: 10px; margin: 15px 0; padding: 12px 13px; border: 1px solid #f1d8d9; border-radius: 8px; color: #893e45; background: #fff7f7; }
 .notice[hidden],.loading-panel[hidden],.results[hidden],.welcome-card[hidden],.recovery-result[hidden] { display: none; }
-.tab-view[hidden],.tab-empty-state[hidden] { display: none; }
+.tab-view[hidden],.tab-empty-state[hidden],#results[hidden] { display: none !important; }
 .notice-icon { width: 17px; height: 17px; display: grid; flex: 0 0 auto; place-items: center; margin-top: 1px; border-radius: 50%; background: #f8e3e4; font-size: 11px; font-weight: 700; }
 .notice strong { display: block; margin-bottom: 3px; font-size: 11px; }
 .notice p { margin: 0; color: #98666a; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }

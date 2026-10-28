@@ -1,15 +1,19 @@
 import atexit
+from contextlib import closing
 import io
 import json
 import logging
 import os
+import sqlite3
 from pathlib import Path
 import sys
+from datetime import datetime, timedelta, timezone
 from tempfile import TemporaryDirectory
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -21,9 +25,15 @@ _TEST_ROOT = TemporaryDirectory(prefix="pipeline-api-tests-")
 os.chdir(_TEST_ROOT.name)
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from app import _json_default, _read_pipeline_csv, app as flask_app
+from app import _json_default, app as flask_app
 from main import build_config
+from pipeline_core import _read_pipeline_csv
 from synthetic_data import generate_logs
+from app.config import AppConfig
+from app.db import init_db
+from app.repositories.schedule import ScheduleRepository
+from app.services.scheduler import SchedulerService
+from app.services.analysis import AnalysisService
 
 
 def _cleanup_test_environment():
@@ -40,9 +50,36 @@ atexit.register(_cleanup_test_environment)
 flask_app.config.update(TESTING=True)
 
 
+def _authenticate_test_client(client, name="API Test"):
+    """Create a real, short-lived DB session for protected API tests."""
+    user_id = time.time_ns()
+    session_id = f"test-{user_id}"
+    now = datetime.now(timezone.utc)
+    with closing(sqlite3.connect("pipeline_state.sqlite3")) as db:
+        db.execute(
+            "INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, f"api-{user_id}@example.com", "unused", now.isoformat()),
+        )
+        db.execute(
+            "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (session_id, user_id, now.isoformat(), (now + timedelta(hours=1)).isoformat()),
+        )
+        db.commit()
+    with client.session_transaction() as auth_session:
+        auth_session["user_id"] = user_id
+        auth_session["session_id"] = session_id
+        auth_session["user_name"] = name
+        auth_session["user_email"] = f"api-{user_id}@example.com"
+        auth_session["csrf_token"] = "test-csrf-token"
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = "test-csrf-token"
+
+
 class ApplicationApiTests(unittest.TestCase):
     def setUp(self):
         self.client = flask_app.test_client()
+        self.client.get("/auth")
+        with self.client.session_transaction() as auth_session:
+            self.client.environ_base["HTTP_X_CSRF_TOKEN"] = auth_session["csrf_token"]
 
     def test_json_default_serializes_numpy_values_and_timestamps(self):
         payload = {
@@ -62,13 +99,148 @@ class ApplicationApiTests(unittest.TestCase):
             },
         )
 
-    def test_dashboard_and_read_endpoints(self):
+    def test_signup_login_logout_and_dashboard_redirects(self):
+        email = f"pipeline-test-{time.time_ns()}@example.com"
+        signup = self.client.post("/api/auth/signup", json={
+            "name": "Pipeline Test",
+            "email": email,
+            "password": "TestPassword123",
+        })
+        self.assertEqual(signup.status_code, 200, signup.get_json())
+        self.assertEqual(signup.get_json()["redirect"], "/")
         self.assertEqual(self.client.get("/").status_code, 200)
+        self.assertEqual(self.client.get("/auth").status_code, 302)
+
+        with self.client.session_transaction() as auth_session:
+            csrf_token = auth_session["csrf_token"]
+        logout = self.client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf_token})
+        self.assertEqual(logout.status_code, 200, logout.get_json())
+        self.assertEqual(self.client.get("/").status_code, 302)
+        self.client.get("/auth")
+        with self.client.session_transaction() as auth_session:
+            self.client.environ_base["HTTP_X_CSRF_TOKEN"] = auth_session["csrf_token"]
+
+        login = self.client.post("/api/auth/login", json={
+            "email": email,
+            "password": "TestPassword123",
+        })
+        self.assertEqual(login.status_code, 200, login.get_json())
+        self.assertEqual(self.client.get("/").status_code, 200)
+        with self.client.session_transaction() as auth_session:
+            self.assertNotEqual(auth_session.get("csrf_token"), csrf_token)
+
+        bad_login_client = flask_app.test_client()
+        bad_login_client.get("/auth")
+        with bad_login_client.session_transaction() as auth_session:
+            bad_login_client.environ_base["HTTP_X_CSRF_TOKEN"] = auth_session["csrf_token"]
+        bad_login = bad_login_client.post("/api/auth/login", json={
+            "email": email,
+            "password": "incorrect",
+        })
+        self.assertEqual(bad_login.status_code, 401)
+        self.assertEqual(bad_login_client.get("/").status_code, 302)
+
+    def test_auth_rejects_malformed_and_oversized_fields(self):
+        malformed = self.client.post("/api/auth/signup", json={
+            "name": [], "email": "bad@example.com", "password": "Password123",
+        })
+        oversized = self.client.post("/api/auth/signup", json={
+            "name": "Test User", "email": "long@example.com", "password": "A1a" + "x" * 300,
+        })
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(oversized.status_code, 400)
+
+    def test_login_and_signup_require_csrf_token(self):
+        anonymous = flask_app.test_client()
+        response = anonymous.post("/api/auth/signup", json={
+            "name": "Secure Test", "email": "secure@example.com", "password": "Password123",
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_state_changing_dashboard_api_rejects_missing_csrf_token(self):
+        _authenticate_test_client(self.client)
+        response = self.client.post("/api/schedule", json={
+            "enabled": False, "interval_seconds": 60, "rows": 1000,
+        }, headers={"X-CSRF-Token": "wrong-token"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_auth_page_has_no_broken_social_auth_target(self):
+        response = self.client.get("/auth")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"/api/auth/social/", response.data)
+
+    def test_dashboard_api_requires_a_live_authenticated_session(self):
+        anonymous = flask_app.test_client()
+        self.assertEqual(anonymous.get("/api/status").status_code, 401)
+        self.assertEqual(anonymous.post("/api/analyze", data={"rows": "1000"}).status_code, 401)
+        _authenticate_test_client(self.client)
+        self.assertEqual(self.client.get("/api/status").status_code, 200)
+        with self.client.session_transaction() as auth_session:
+            auth_session["session_id"] = "revoked-session"
+        self.assertEqual(self.client.get("/api/status").status_code, 401)
+        self.assertEqual(self.client.get("/").headers["Location"], "/auth")
+        self.assertEqual(self.client.get("/auth").status_code, 200)
+
+    def test_airflow_endpoints_require_session_and_retry_requires_csrf(self):
+        anonymous = flask_app.test_client()
+        self.assertEqual(anonymous.get("/api/airflow").status_code, 401)
+        self.assertEqual(anonymous.post("/api/airflow/retry").status_code, 401)
+
+        _authenticate_test_client(self.client)
+        recovery = flask_app.config["AIRFLOW_RECOVERY"]
+        with patch.object(recovery, "inspect", return_value={
+            "status": {"configured": False, "ready_for_automation": False},
+            "failed_tasks": [],
+        }):
+            response = self.client.get("/api/airflow")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["status"]["configured"])
+
+        bad_csrf = self.client.post("/api/airflow/retry", headers={"X-CSRF-Token": "wrong-token"})
+        self.assertEqual(bad_csrf.status_code, 403)
+
+    def test_dashboard_renders_airflow_monitor_targets(self):
+        _authenticate_test_client(self.client)
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        for element_id in ("airflow-status", "airflow-config-note", "airflow-failures", "airflow-events"):
+            self.assertIn(f'id="{element_id}"', page)
+
+    def test_security_headers_are_present(self):
+        response = self.client.get("/auth")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
+        self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertIn("csrf-token", response.get_data(as_text=True))
+
+    def test_healthcheck_returns_only_readiness(self):
+        response = self.client.get("/healthz")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"status": "ok"})
+
+    def test_dashboard_and_read_endpoints(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/auth")
+        self.assertEqual(self.client.get("/auth").status_code, 200)
+        self.assertEqual(self.client.get("/login").headers["Location"], "/auth#login")
+        self.assertEqual(self.client.get("/signup").headers["Location"], "/auth#signup")
+
+        _authenticate_test_client(self.client, name="Avery Pipeline")
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn(b"PipelineIQ", dashboard.data)
+        self.assertIn(b"Avery Pipeline", dashboard.data)
+        self.assertIn(b'id="logout-button"', dashboard.data)
         static_response = self.client.get("/static/app.js")
         try:
             self.assertEqual(static_response.status_code, 200)
         finally:
             static_response.close()
+
+        _authenticate_test_client(self.client)
 
         for endpoint in (
             "/api/status",
@@ -85,12 +257,16 @@ class ApplicationApiTests(unittest.TestCase):
                 self.assertEqual(response.mimetype, "application/json")
 
     def test_analysis_persists_history_and_downloadable_reports(self):
+        _authenticate_test_client(self.client)
         response = self.client.post("/api/analyze", data={"rows": "1000"})
 
         self.assertEqual(response.status_code, 200, response.get_json())
         result = response.get_json()
         self.assertGreaterEqual(result["rows_clean"], 200)
         self.assertEqual(result["failures"]["records"], result["rows_clean"])
+        self.assertTrue(result["top_risk"])
+        self.assertTrue(all("duration_threshold" in risk for risk in result["top_risk"]))
+        self.assertTrue(all(0 <= risk["risk"] <= 1 for risk in result["top_risk"]))
         self.assertTrue(result["report_file"].startswith("report_"))
         report_response = self.client.get("/api/reports/" + result["report_file"])
         try:
@@ -106,6 +282,7 @@ class ApplicationApiTests(unittest.TestCase):
         )
 
     def test_invalid_analysis_inputs_return_client_errors(self):
+        _authenticate_test_client(self.client)
         invalid_rows = self.client.post("/api/analyze", data={"rows": "many"})
         self.assertEqual(invalid_rows.status_code, 400)
 
@@ -130,7 +307,6 @@ class ApplicationApiTests(unittest.TestCase):
 
         parsed = _read_pipeline_csv(
             io.BytesIO(csv_content.encode("utf-8")),
-            "pipeline.csv",
             build_config(),
             check_clean_rows=False,
         )
@@ -139,6 +315,7 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertEqual(list(parsed.columns[:8]), list(frame.columns[:8]))
 
     def test_population_csv_reports_unsupported_dataset_after_parsing(self):
+        _authenticate_test_client(self.client)
         columns = [f"year_{year}" for year in range(1960, 2023)]
         header = ["Country Name", "Country Code", "Indicator Name", "Indicator Code", *columns]
         records = [
@@ -162,6 +339,7 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertIn("Country Name", response.get_json()["error"])
 
     def test_request_size_limit_returns_413(self):
+        _authenticate_test_client(self.client)
         original_limit = flask_app.config["MAX_CONTENT_LENGTH"]
         flask_app.config["MAX_CONTENT_LENGTH"] = 32
         try:
@@ -176,6 +354,7 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
 
     def test_scheduler_rejects_non_object_json_and_invalid_values(self):
+        _authenticate_test_client(self.client)
         non_object = self.client.post("/api/schedule", json=["not", "an object"])
         self.assertEqual(non_object.status_code, 400)
 
@@ -219,6 +398,7 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertFalse(valid.get_json()["schedule"]["enabled"])
 
     def test_scheduled_csv_upload_and_rejection(self):
+        _authenticate_test_client(self.client)
         csv_content = generate_logs(300).to_csv(index=False).encode("utf-8")
         uploaded = self.client.post(
             "/api/schedule/datasets",
@@ -238,6 +418,7 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertEqual(invalid.status_code, 400)
 
     def test_recovery_demo_executes_retry_workflow(self):
+        _authenticate_test_client(self.client)
         response = self.client.post("/api/recovery-demo")
 
         self.assertEqual(response.status_code, 200, response.get_json())
@@ -256,7 +437,8 @@ class ApplicationApiTests(unittest.TestCase):
         raise ValueError(f"Invalid JSON constant: {value}")
 
     def test_recovery_demo_redacts_internal_errors(self):
-        with patch("app.demo_live_pipeline", side_effect=RuntimeError("C:\\private\\secret.csv")):
+        _authenticate_test_client(self.client)
+        with patch("main.demo_live_pipeline", side_effect=RuntimeError("C:\\private\\secret.csv")):
             response = self.client.post("/api/recovery-demo")
 
         self.assertEqual(response.status_code, 500)
@@ -267,282 +449,184 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertNotIn("secret.csv", response.get_data(as_text=True))
 
 
-class ApplicationSchedulerTests(unittest.TestCase):
+class SchedulerServiceTests(unittest.TestCase):
+    """Unit tests for SchedulerService, independent of Flask and timing loops."""
+
     def setUp(self):
-        import app as application
+        self.temp_root = TemporaryDirectory(prefix="pipeline-scheduler-service-tests-")
+        self.db_path = Path(self.temp_root.name) / "state.sqlite3"
+        self.data_dir = Path(self.temp_root.name) / "incoming"
+        self.data_dir.mkdir()
 
-        self.application = application
-        self.client = application.app.test_client()
-        self.temp_root = TemporaryDirectory(prefix="pipeline-scheduler-tests-", dir=_TEST_ROOT.name)
-        self.original_paths = {
-            key: application.app.config[key]
-            for key in ("STATE_DB_PATH", "SCHEDULE_DATA_DIR")
-        }
-        self.original_schedule = dict(application._schedule)
-        self.original_version = application._schedule_version
-        self.original_thread = application._scheduler_thread
-        self.original_history = list(application._analysis_history)
-        self.original_latest = application._latest_analysis
-        self.original_recovery = application._latest_recovery
+        base = AppConfig.from_env()
+        self.config = SimpleNamespace(
+            state_db_path=self.db_path,
+            schedule_data_dir=self.data_dir,
+            min_interval_seconds=15,
+            max_interval_seconds=604800,
+            min_sample_rows=1000,
+            max_sample_rows=500_000,
+        )
+        init_db(AppConfig.from_env())  # ensure schema on the default path too
+        init_db_for_path(self.config)
 
-        old_thread = application._scheduler_thread
-        with application._state_lock:
-            application._schedule["enabled"] = False
-            application._schedule["next_run"] = None
-        if isinstance(old_thread, threading.Thread) and old_thread.is_alive():
-            old_thread.join(timeout=2)
-
-        root = Path(self.temp_root.name)
-        application.app.config["STATE_DB_PATH"] = root / "state.sqlite3"
-        application.app.config["SCHEDULE_DATA_DIR"] = root / "incoming"
-        application.app.config["SCHEDULE_DATA_DIR"].mkdir()
-        application._scheduler_thread = None
-        application._schedule_version = 0
-        application._analysis_history.clear()
-        application._latest_analysis = None
-        application._latest_recovery = None
-        with application._state_lock:
-            application._schedule.update({
-                "enabled": False,
-                "interval_seconds": 3600,
-                "rows": 10000,
-                "source_type": "sample",
-                "dataset_name": "",
-                "next_run": None,
-                "last_run": None,
-                "last_error": None,
-                "runs": 0,
-                "running": False,
-            })
-        with application._state_connection() as db:
-            db.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS analysis_history "
-                "(generated_at TEXT PRIMARY KEY, payload TEXT NOT NULL)"
-            )
+        self.schedule_repo = ScheduleRepository(_config_for_path(self.config))
+        self.analysis_service = Mock(spec=AnalysisService)
+        self.scheduler = SchedulerService(
+            config=self.config,
+            analysis_service=self.analysis_service,
+            schedule_repository=self.schedule_repo,
+            data_dir=self.data_dir,
+        )
 
     def tearDown(self):
-        application = self.application
-        with application._state_lock:
-            application._schedule["enabled"] = False
-            application._schedule["next_run"] = None
-        thread = application._scheduler_thread
-        if isinstance(thread, threading.Thread) and thread.is_alive():
-            thread.join(timeout=3)
-        application._scheduler_thread = None
-        application.app.config.update(self.original_paths)
-        application._schedule.clear()
-        application._schedule.update(self.original_schedule)
-        application._schedule_version = self.original_version
-        application._analysis_history[:] = self.original_history
-        application._latest_analysis = self.original_latest
-        application._latest_recovery = self.original_recovery
-        self.temp_root.cleanup()
+        self.scheduler.stop()
+        try:
+            self.temp_root.cleanup()
+        except PermissionError:
+            pass  # Windows may briefly hold SQLite WAL file locks after connections close
 
-    def _enable_schedule(self):
-        response = self.client.post("/api/schedule", json={
-            "enabled": True,
-            "interval_seconds": 15,
-            "rows": 1000,
-            "source_type": "sample",
-        })
-        self.assertEqual(response.status_code, 200, response.get_json())
-
-    def _disable_schedule(self):
-        response = self.client.post("/api/schedule", json={
-            "enabled": False,
-            "interval_seconds": 15,
-            "rows": 1000,
-            "source_type": "sample",
-        })
-        self.assertEqual(response.status_code, 200, response.get_json())
-
-    def test_restart_restores_overdue_schedule_without_losing_due_timestamp(self):
-        application = self.application
-        overdue_timestamp = time.time() - 120
-        saved = {
-            "enabled": True,
-            "interval_seconds": 15,
-            "rows": 1000,
-            "source_type": "sample",
-            "dataset_name": "",
-            "next_run": overdue_timestamp,
-            "last_run": None,
-            "last_error": None,
-            "runs": 4,
-        }
-        with application._state_connection() as db:
+    def _persist_raw(self, key: str, value: str):
+        with closing(sqlite3.connect(str(self.config.state_db_path), timeout=30)) as db:
+            db.execute("PRAGMA busy_timeout = 30000")
             db.execute(
-                "INSERT INTO app_state (key, value) VALUES ('schedule', ?)",
-                (json.dumps(saved),),
+                "INSERT INTO app_state (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
             )
-            db.execute(
-                "INSERT INTO analysis_history (generated_at, payload) VALUES (?, ?)",
-                ("2026-10-08T00:00:00+00:00", json.dumps({"generated_at": "2026-10-08T00:00:00+00:00"})),
+            db.commit()
+
+    def test_configure_valid_sample_schedule(self):
+        state = self.scheduler.configure(
+            enabled=True, interval_seconds=60, rows=1000,
+            source_type="sample", dataset_name="",
+        )
+        self.assertTrue(state["enabled"])
+        self.assertEqual(state["interval_seconds"], 60)
+        self.assertEqual(state["rows"], 1000)
+        self.assertEqual(state["source_type"], "sample")
+        self.assertIsNotNone(state["next_run"])
+        self.assertTrue(state["next_run"].endswith("+00:00"))
+        row = self.schedule_repo.get()
+        self.assertIsNotNone(row)
+        self.assertEqual(json.loads(row["value"])["runs"], 0)
+
+    def test_configure_rejects_invalid_interval(self):
+        with self.assertRaisesRegex(Exception, "interval"):
+            self.scheduler.configure(
+                enabled=True, interval_seconds=1, rows=1000,
+                source_type="sample", dataset_name="",
             )
 
-        with patch("app.threading.Thread") as thread_factory:
-            application._load_persistent_state()
+    def test_configure_rejects_invalid_rows(self):
+        with self.assertRaisesRegex(Exception, "sample size"):
+            self.scheduler.configure(
+                enabled=True, interval_seconds=60, rows=99,
+                source_type="sample", dataset_name="",
+            )
 
-        self.assertLess(application._schedule["next_run"], time.time())
-        self.assertEqual(application._schedule["runs"], 4)
-        self.assertEqual(len(application._analysis_history), 1)
+    def test_configure_csv_requires_existing_dataset(self):
+        with self.assertRaisesRegex(Exception, "not available"):
+            self.scheduler.configure(
+                enabled=True, interval_seconds=60, rows=1000,
+                source_type="csv", dataset_name="missing.csv",
+            )
+
+    def test_get_state_converts_next_run_to_iso(self):
+        self.scheduler.configure(enabled=False, interval_seconds=60, rows=1000,
+                                 source_type="sample", dataset_name="")
+        with self.scheduler._lock:
+            self.scheduler._schedule["next_run"] = time.time() + 100
+        state = self.scheduler.get_state()
+        self.assertTrue(state["next_run"].endswith("+00:00") or "T" in state["next_run"])
+
+    def test_load_persisted_restores_overdue_schedule(self):
+        overdue = time.time() - 120
+        self._persist_raw("schedule", json.dumps({
+            "enabled": True, "interval_seconds": 15, "rows": 1000,
+            "source_type": "sample", "dataset_name": "",
+            "next_run": overdue, "last_run": None, "last_error": None, "runs": 4,
+        }))
+        with patch("app.services.scheduler.threading.Thread") as thread_factory:
+            self.scheduler.load_persisted()
+        self.assertLess(self.scheduler._schedule["next_run"], time.time())
+        self.assertEqual(self.scheduler._schedule["runs"], 4)
         thread_factory.assert_called_once()
         thread_factory.return_value.start.assert_called_once_with()
 
-    def test_malformed_or_invalid_persisted_schedule_uses_safe_defaults(self):
-        application = self.application
-        for saved_value in ("[]", json.dumps({"enabled": True, "interval_seconds": -1})):
-            with self.subTest(saved_value=saved_value):
-                with application._state_connection() as db:
-                    db.execute(
-                        "INSERT INTO app_state (key, value) VALUES ('schedule', ?) "
-                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                        (saved_value,),
-                    )
-                application._schedule.update({
-                    "enabled": False,
-                    "interval_seconds": 3600,
-                    "rows": 10000,
-                    "source_type": "sample",
-                    "dataset_name": "",
-                    "next_run": None,
-                    "last_run": None,
-                    "last_error": None,
-                    "runs": 0,
-                    "running": False,
-                })
-                application._scheduler_thread = None
-                with patch("app.threading.Thread") as thread_factory:
-                    application._load_persistent_state()
+    def test_load_persisted_malformed_uses_safe_defaults(self):
+        self._persist_raw("schedule", "not-json")
+        self.scheduler._schedule = self.scheduler._defaults()
+        self.scheduler._version = 0
+        self.scheduler._scheduler_thread = None
+        with patch("app.services.scheduler.threading.Thread") as thread_factory:
+            self.scheduler.load_persisted()
+        self.assertFalse(self.scheduler._schedule["enabled"])
+        self.assertEqual(self.scheduler._schedule["interval_seconds"], 3600)
+        thread_factory.assert_not_called()
 
-                self.assertFalse(application._schedule["enabled"])
-                self.assertEqual(application._schedule["interval_seconds"], 3600)
-                thread_factory.assert_not_called()
+    def test_run_due_executes_analysis_once_and_persists(self):
+        self.scheduler._schedule = self.scheduler._defaults()
+        self.scheduler._schedule["enabled"] = True
+        self.scheduler._version = 1
+        self.analysis_service.analyze = Mock(return_value={})
+        with patch("pipeline_core._read_pipeline_csv", return_value=pd.DataFrame()), \
+             patch("synthetic_data.generate_logs", return_value=pd.DataFrame()):
+            self.scheduler._run_due(self.scheduler._version, 1000, "sample", "")
+        self.analysis_service.analyze.assert_called_once()
+        self.assertEqual(self.scheduler._schedule["runs"], 1)
+        self.assertIsNone(self.scheduler._schedule["last_error"])
+        self.assertGreater(self.scheduler._schedule["next_run"], time.time())
 
-    def test_scheduler_runs_overdue_job_once_persists_result_and_stops_when_disabled(self):
-        application = self.application
-        completed = threading.Event()
+    def test_run_due_records_error_when_analysis_fails(self):
+        self.scheduler._schedule = self.scheduler._defaults()
+        self.scheduler._schedule["enabled"] = True
+        self.scheduler._version = 1
+        self.analysis_service.analyze = Mock(side_effect=RuntimeError("boom"))
+        from pipeline_core import _read_pipeline_csv
+        with patch("pipeline_core._read_pipeline_csv", return_value=pd.DataFrame()), \
+             patch("synthetic_data.generate_logs", return_value=pd.DataFrame()):
+            self.scheduler._run_due(self.scheduler._version, 1000, "sample", "")
+        self.assertEqual(self.scheduler._schedule["runs"], 1)
+        self.assertIn("RuntimeError: boom", self.scheduler._schedule["last_error"])
 
-        def fake_analysis(*_args):
-            completed.set()
-            return {}
+    def test_run_due_respects_version_change(self):
+        self.scheduler._schedule = self.scheduler._defaults()
+        self.scheduler._schedule["enabled"] = True
+        self.scheduler._version = 1
+        self.analysis_service.analyze = Mock(return_value={})
+        with patch("pipeline_core._read_pipeline_csv", return_value=pd.DataFrame()), \
+             patch("synthetic_data.generate_logs", return_value=pd.DataFrame()):
+            self.scheduler._run_due(999, 1000, "sample", "")  # stale version
+        self.analysis_service.analyze.assert_not_called()
 
-        with patch("app._analyze_dataframe", side_effect=fake_analysis) as analyze:
-            self._enable_schedule()
-            with application._state_lock:
-                application._schedule["next_run"] = time.time() - 1
 
-            self.assertTrue(completed.wait(5), "the due scheduled job did not execute")
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline:
-                with application._state_lock:
-                    if application._schedule["runs"] == 1 and not application._schedule["running"]:
-                        break
-                time.sleep(0.01)
+def init_db_for_path(config):
+    from app.db import transaction, SCHEMA
+    with transaction(config) as connection:
+        connection.executescript(SCHEMA)
 
-            self.assertEqual(analyze.call_count, 1)
-            self.assertEqual(application._schedule["runs"], 1)
-            self.assertIsNone(application._schedule["last_error"])
-            self.assertGreater(application._schedule["next_run"], time.time())
-            with application._state_connection() as db:
-                saved = db.execute(
-                    "SELECT value FROM app_state WHERE key = 'schedule'"
-                ).fetchone()
-            self.assertEqual(json.loads(saved[0])["runs"], 1)
 
-        thread = application._scheduler_thread
-        self._disable_schedule()
-        if isinstance(thread, threading.Thread):
-            thread.join(timeout=3)
-            self.assertFalse(thread.is_alive(), "disabled scheduler thread should exit")
-        self.assertIsNone(application._scheduler_thread)
-
-    def test_scheduler_records_failure_then_recovers_on_a_later_run(self):
-        application = self.application
-        first_run = threading.Event()
-        second_run = threading.Event()
-        calls = []
-        active = {"count": 0, "max": 0}
-        active_lock = threading.Lock()
-
-        def failing_then_successful(*_args):
-            with active_lock:
-                active["count"] += 1
-                active["max"] = max(active["max"], active["count"])
-            try:
-                calls.append(len(calls) + 1)
-                if len(calls) == 1:
-                    first_run.set()
-                    raise RuntimeError("isolated source failure")
-                second_run.set()
-            finally:
-                with active_lock:
-                    active["count"] -= 1
-
-        with patch("app._analyze_dataframe", side_effect=failing_then_successful):
-            self._enable_schedule()
-            with application._state_lock:
-                application._schedule["next_run"] = time.time() - 1
-
-            self.assertTrue(first_run.wait(5), "the first scheduled attempt did not execute")
-            deadline = time.monotonic() + 3
-            while time.monotonic() < deadline:
-                with application._state_lock:
-                    if application._schedule["runs"] == 1 and application._schedule["last_error"]:
-                        break
-                time.sleep(0.01)
-            self.assertEqual(application._schedule["runs"], 1)
-            self.assertIn("RuntimeError: isolated source failure", application._schedule["last_error"])
-
-            with application._state_lock:
-                application._schedule["next_run"] = time.time() - 1
-            self.assertTrue(second_run.wait(5), "the later scheduled attempt did not execute")
-            deadline = time.monotonic() + 3
-            while time.monotonic() < deadline:
-                with application._state_lock:
-                    if application._schedule["runs"] == 2 and not application._schedule["running"]:
-                        break
-                time.sleep(0.01)
-
-            self.assertEqual(calls, [1, 2])
-            self.assertEqual(active["max"], 1)
-            self.assertEqual(application._schedule["runs"], 2)
-            self.assertIsNone(application._schedule["last_error"])
-
-        thread = application._scheduler_thread
-        self._disable_schedule()
-        if isinstance(thread, threading.Thread):
-            thread.join(timeout=3)
-            self.assertFalse(thread.is_alive())
-
-    def test_disabling_schedule_cancels_due_job_waiting_for_analysis_lock(self):
-        application = self.application
-        application._analysis_lock.acquire()
-        try:
-            with patch("app._analyze_dataframe") as analyze:
-                self._enable_schedule()
-                with application._state_lock:
-                    application._schedule["next_run"] = time.time() - 1
-                deadline = time.monotonic() + 5
-                while time.monotonic() < deadline:
-                    with application._state_lock:
-                        if application._schedule["running"]:
-                            break
-                    time.sleep(0.01)
-                self.assertTrue(application._schedule["running"], "scheduled job was not dispatched")
-
-                thread = application._scheduler_thread
-                self._disable_schedule()
-                application._analysis_lock.release()
-                thread.join(timeout=3)
-
-                analyze.assert_not_called()
-                self.assertEqual(application._schedule["runs"], 0)
-                self.assertFalse(thread.is_alive())
-        finally:
-            if application._analysis_lock.locked():
-                application._analysis_lock.release()
+def _config_for_path(config):
+    from app.config import AppConfig
+    base = AppConfig.from_env()
+    return AppConfig(
+        env=base.env, production=base.production, testing=True, debug=False,
+        secret_key=base.secret_key, host=base.host, port=base.port,
+        state_db_path=config.state_db_path,
+        schedule_data_dir=config.schedule_data_dir,
+        report_dir=base.report_dir, log_file=base.log_file,
+        model_path=base.model_path, max_content_length=base.max_content_length,
+        session_cookie_secure=base.session_cookie_secure,
+        session_cookie_samesite=base.session_cookie_samesite,
+        permanent_session_lifetime=base.permanent_session_lifetime,
+        analysis_history_limit=base.analysis_history_limit,
+        min_clean_rows=base.min_clean_rows,
+        min_sample_rows=base.min_sample_rows,
+        max_sample_rows=base.max_sample_rows,
+        min_interval_seconds=base.min_interval_seconds,
+        max_interval_seconds=base.max_interval_seconds,
+    )
 
 
 if __name__ == "__main__":

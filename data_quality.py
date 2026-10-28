@@ -44,10 +44,11 @@ class DataQualityValidator:
             issues.append({"type": "duplicate_rows", "count": dups})
 
         # 5. Negative values in numeric columns that should be non-negative
-        for col in df.select_dtypes("number").columns:
-            neg = int((df[col] < 0).sum())
-            if neg:
-                issues.append({"type": "negative_values", "column": col, "count": neg})
+        numeric_df = df.select_dtypes("number")
+        if not numeric_df.empty:
+            neg_counts = (numeric_df < 0).sum()
+            for col, neg in neg_counts[neg_counts > 0].items():
+                issues.append({"type": "negative_values", "column": col, "count": int(neg)})
 
         bounds = {
             self.cfg.col_duration: (0, None),
