@@ -30,6 +30,8 @@ const els = {
   noticeMessage: document.getElementById("notice-message"),
   noticeClose: document.getElementById("notice-close"),
   loadingPanel: document.getElementById("loading-panel"),
+  analysisProgressTitle: document.getElementById("analysis-progress-title"),
+  analysisProgressDetail: document.getElementById("analysis-progress-detail"),
   systemStatus: document.getElementById("system-status"),
   runAnalysis: document.getElementById("run-analysis"),
   refreshButton: document.getElementById("refresh-button"),
@@ -76,26 +78,65 @@ let currentAnalysisJob = null;
 function showNotice(message, title = "We couldn’t complete the analysis") {
   els.noticeTitle.textContent = title;
   els.noticeMessage.textContent = message;
+  els.notice.classList.remove("entering");
+  void els.notice.offsetHeight;
+  els.notice.classList.add("entering");
   toggleVisibility(els.notice, false);
   els.notice.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function clearNotice() {
+  els.notice.classList.remove("entering");
   toggleVisibility(els.notice, true);
   els.noticeMessage.textContent = "";
 }
 
-function setBusy(busy) {
-  [els.runAnalysis, els.refreshButton].forEach((b) => {
+function setBusy(busy, stage = "") {
+  [els.runAnalysis, els.refreshButton, ...document.querySelectorAll("[data-run-analysis]"), document.getElementById("welcome-run")].forEach((b) => {
     if (!b) return;
     b.disabled = busy;
     b.setAttribute("aria-busy", String(busy));
   });
   toggleVisibility(els.loadingPanel, busy);
+  if (busy) {
+    els.loadingPanel.classList.remove("fade-in");
+    void els.loadingPanel.offsetHeight;
+    els.loadingPanel.classList.add("fade-in");
+  } else {
+    els.loadingPanel.classList.remove("fade-in");
+  }
   if (els.runAnalysis) {
     els.runAnalysis.innerHTML = busy
       ? '<span class="loader" aria-hidden="true"></span> Analyzing…'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"/></svg> Run analysis';
+  }
+  if (!busy) updateAnalysisProgress();
+  else updateAnalysisProgress(stage || "starting", 0);
+}
+
+const analysisStageLabels = {
+  queued: "Waiting for the analysis worker",
+  starting: "Preparing analysis",
+  reading_csv: "Reading CSV data",
+  validating: "Validating input",
+  cleaning: "Cleaning pipeline records",
+  detecting_failures: "Detecting failures",
+  training_model: "Training risk model",
+  computing_metrics: "Computing dashboard metrics",
+  finalizing: "Saving results",
+  done: "Analysis complete",
+  error: "Analysis failed",
+  timeout: "Analysis timed out",
+};
+
+function updateAnalysisProgress(stage = "", progress = null) {
+  if (els.analysisProgressTitle) {
+    els.analysisProgressTitle.textContent = analysisStageLabels[stage] || "Analyzing";
+  }
+  if (els.analysisProgressDetail) {
+    els.analysisProgressDetail.textContent = progress == null
+      ? "Large datasets may take a moment."
+      : `${Math.max(0, Math.min(100, Number(progress) || 0))}% complete — your dashboard will update automatically.`;
   }
 }
 
@@ -257,58 +298,27 @@ function renderView(tab, data) {
   else view(container, data);
 
   // Wire view-specific interactive elements after render
-  if (tab === "health") wireHealthTable(container);
   if (tab === "scheduler") wireScheduler(container);
   if (tab === "quality") wireQualityToggle(container, data);
+  animateReportView(container);
 }
 
-/** Wire search/sort on the health task table. */
-function wireHealthTable(container) {
-  const searchEl = container.querySelector("#task-search");
-  const sortEl = container.querySelector("#task-sort");
-  const tasks = container.dataset.tasks ? JSON.parse(container.dataset.tasks) : [];
-  if (!searchEl || !sortEl) return;
-
-  const onChange = () => {
-    const tbody = container.querySelector("#task-rows");
-    const visibleCount = container.querySelector("#task-visible-count");
-    const query = (searchEl.value || "").trim().toLowerCase();
-    const sort = sortEl.value || "rate";
-    let rows = tasks.filter((t) => String(t.task).toLowerCase().includes(query));
-    rows.sort((a, b) => {
-      const rateA = Number(a.runs || 0) ? Number(a.flagged || 0) / Number(a.runs) : 0;
-      const rateB = Number(b.runs || 0) ? Number(b.flagged || 0) / Number(b.runs) : 0;
-      if (sort === "name") return String(a.task).localeCompare(String(b.task));
-      const field = { rate: null, flagged: "flagged", duration: "avg_duration", runs: "runs" }[sort] || "flagged";
-      const va = sort === "rate" ? rateA : Number(a[field] || 0);
-      const vb = sort === "rate" ? rateB : Number(b[field] || 0);
-      return vb - va;
-    });
-    if (visibleCount) visibleCount.textContent = `${number(rows.length)} shown`;
-    if (tbody) {
-      tbody.innerHTML = rows.length
-        ? rows.map((task) => {
-          const flagged = Number(task.flagged || 0);
-          const runs = Number(task.runs || 0);
-          const rate = runs ? flagged / runs : 0;
-          const health = rate > 0.15 ? "critical" : rate > 0.05 ? "watch" : "good";
-          const label = health === "critical" ? "At risk" : health === "watch" ? "Monitor" : "Healthy";
-          return `
-            <tr>
-              <td>${escape(task.task)}</td>
-              <td>${number(runs)}</td>
-              <td>${number(flagged)}</td>
-              <td><div class="failure-rate-cell"><span>${percent(rate)}</span><i><b class="${health}" style="width:${Math.min(100, rate * 100)}%"></b></i></div></td>
-              <td>${Number(task.avg_duration || 0).toFixed(1)}s</td>
-              <td><span class="health-pill ${health}">${label}</span></td>
-            </tr>
-          `;
-        }).join("")
-        : `<tr><td colspan="6" class="empty-row">No tasks match that search.</td></tr>`;
-    }
-  };
-  searchEl.addEventListener("input", onChange);
-  sortEl.addEventListener("change", onChange);
+/**
+ * Give each report visual a short, ordered entrance.  This is deliberately
+ * presentation-only: it never changes the data, filtering, or chart values.
+ */
+function animateReportView(container) {
+  const cards = container.querySelectorAll(
+    ".metric-card, .panel, .recovery-panel, .risk-item, .quality-finding, .task-rate-row"
+  );
+  cards.forEach((element, index) => {
+    element.classList.remove("report-reveal", "is-visible");
+    element.style.setProperty("--reveal-delay", `${Math.min(index, 10) * 45}ms`);
+    element.classList.add("report-reveal");
+  });
+  requestAnimationFrame(() => {
+    cards.forEach((element) => element.classList.add("is-visible"));
+  });
 }
 
 /** Wire quality toggle on dashboard. */
@@ -414,14 +424,19 @@ async function runAnalysis() {
     return;
   }
 
-  setBusy(true);
+  setBusy(true, "starting");
   try {
-    let result;
+    // The service already exposes a job API.  Use it for every dashboard
+    // submission so a slow model fit never exceeds the browser request
+    // deadline or leaves the loading panel without a completion path.
+    let started;
     if (file) {
-      result = await Api.analyzeFile(file);
+      started = await Api.analyzeFile(file, { async: true });
     } else {
-      result = await Api.analyzeSample(parseInt(els.sampleRows.value, 10) || 30000);
+      started = await Api.analyzeSample(parseInt(els.sampleRows.value, 10) || 30000, { async: true });
     }
+    if (!started?.job_id) throw new ApiError(500, "The analysis service did not return a job identifier.");
+    const result = await waitForAnalysisJob(started.job_id);
     set("analysis", result);
     updateLastRun(result.generated_at);
     setSystemStatus(true);
@@ -433,6 +448,38 @@ async function runAnalysis() {
     handleApiError(error, "Analysis failed. Please check your data and try again.");
   } finally {
     setBusy(false);
+  }
+}
+
+async function waitForAnalysisJob(jobId) {
+  currentAnalysisJob = jobId;
+  const pollDelayMs = 750;
+  // A server deadline is authoritative.  This client-side guard also covers
+  // an older/stale server that never returns a terminal state.
+  let deadline = Date.now() + 6 * 60 * 1000;
+  try {
+    while (currentAnalysisJob === jobId) {
+      const job = await Api.getJob(jobId);
+      upsertJob(jobId, job);
+      updateAnalysisProgress(job.stage, job.progress);
+      const serverDeadline = Date.parse(job.deadline_at || "");
+      if (!Number.isNaN(serverDeadline)) deadline = Math.min(deadline, serverDeadline + 5000);
+      if (job.status === "completed") {
+        if (!job.result) throw new ApiError(500, "Analysis completed without dashboard results.");
+        return job.result;
+      }
+      if (job.status === "failed") {
+        throw new ApiError(500, job.error || "Analysis could not be completed.");
+      }
+      if (Date.now() >= deadline) {
+        throw new ApiError(408, "Analysis timed out before the server returned a result. Please try again with a smaller CSV.");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, pollDelayMs));
+    }
+    throw new ApiError(409, "The analysis job was superseded.");
+  } finally {
+    if (currentAnalysisJob === jobId) currentAnalysisJob = null;
+    removeJob(jobId);
   }
 }
 

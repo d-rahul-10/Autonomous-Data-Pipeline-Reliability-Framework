@@ -13,7 +13,7 @@ export function renderHealth(container, tasks) {
   const totalRuns = taskList.reduce((sum, t) => sum + Number(t.runs || 0), 0);
   const totalFlagged = taskList.reduce((sum, t) => sum + Number(t.flagged || 0), 0);
   const worstTask = taskList.reduce((worst, t) => {
-    const rate = Number(t.runs || 0) ? Number(t.flagged || 0) / Number(t.runs) : 0;
+    const rate = taskFailureRate(t);
     return !worst || rate > worst.rate ? { name: t.task, rate } : worst;
   }, null);
 
@@ -69,10 +69,10 @@ export function renderHealth(container, tasks) {
       </article>
   `;
 
-  // Store task data on container for the controller to wire search/sort
-  container.dataset.tasks = JSON.stringify(taskList);
-  container._renderTaskTable = () => renderTaskTable(container, taskList);
-  container._renderTaskTable();
+  const render = () => renderTaskTable(container, taskList);
+  render();
+  container.querySelector("#task-search")?.addEventListener("input", render);
+  container.querySelector("#task-sort")?.addEventListener("change", render);
 }
 
 /**
@@ -92,8 +92,8 @@ function renderTaskTable(container, tasks) {
 
   let rows = tasks.filter((t) => String(t.task).toLowerCase().includes(query));
   rows.sort((a, b) => {
-    const rateA = Number(a.runs || 0) ? Number(a.flagged || 0) / Number(a.runs) : 0;
-    const rateB = Number(b.runs || 0) ? Number(b.flagged || 0) / Number(b.runs) : 0;
+    const rateA = taskFailureRate(a);
+    const rateB = taskFailureRate(b);
     if (sort === "name") return String(a.task).localeCompare(String(b.task));
     const field = { rate: null, flagged: "flagged", duration: "avg_duration", runs: "runs" }[sort] || "flagged";
     const va = sort === "rate" ? rateA : Number(a[field] || 0);
@@ -107,9 +107,8 @@ function renderTaskTable(container, tasks) {
     ? rows.map((task) => {
       const flagged = Number(task.flagged || 0);
       const runs = Number(task.runs || 0);
-      const rate = runs ? flagged / runs : 0;
-      const health = rate > 0.15 ? "critical" : rate > 0.05 ? "watch" : "good";
-      const label = health === "critical" ? "At risk" : health === "watch" ? "Monitor" : "Healthy";
+      const rate = taskFailureRate(task);
+      const health = taskHealth(task, rate);
       return `
         <tr>
           <td>${escape(task.task)}</td>
@@ -122,4 +121,16 @@ function renderTaskTable(container, tasks) {
       `;
     }).join("")
     : `<tr><td colspan="6" class="empty-row">No tasks match that search.</td></tr>`;
+}
+
+function taskFailureRate(task) {
+  const supplied = Number(task.failure_rate);
+  return Number.isFinite(supplied)
+    ? Math.max(0, supplied)
+    : Number(task.runs || 0) ? Number(task.flagged || 0) / Number(task.runs) : 0;
+}
+
+function taskHealth(task, rate) {
+  if (["good", "watch", "critical"].includes(task.health)) return task.health;
+  return rate >= 0.15 ? "critical" : rate >= 0.05 ? "watch" : "good";
 }

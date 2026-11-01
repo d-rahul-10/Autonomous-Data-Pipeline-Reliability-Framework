@@ -1,15 +1,18 @@
 """Lightweight interval scheduler (stdlib only)."""
+
+from __future__ import annotations
+
 import math
 import threading
 import time
 from dataclasses import dataclass, field
 from numbers import Real
-from typing import Callable
+from typing import Callable, List, Optional
 
 from logging_utils import get_logger
 
 
-@dataclass
+@dataclass(slots=True)
 class Job:
     name: str
     fn: Callable
@@ -20,8 +23,10 @@ class Job:
 
 
 class Scheduler:
-    def __init__(self, log_file: str = "pipeline.log"):
-        self.jobs: list[Job] = []
+    """Simple interval-based job scheduler."""
+
+    def __init__(self, log_file: str = "pipeline.log") -> None:
+        self.jobs: List[Job] = []
         self.log = get_logger("scheduler", log_file)
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
@@ -32,24 +37,30 @@ class Scheduler:
         fn: Callable,
         interval_s: float,
         run_immediately: bool = True,
-    ):
+    ) -> Job:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("Job name must be a non-empty string.")
         if not callable(fn):
             raise TypeError("Job function must be callable.")
-        if (isinstance(interval_s, bool) or not isinstance(interval_s, Real)
-                or not math.isfinite(interval_s) or interval_s <= 0):
+        if (
+            isinstance(interval_s, bool)
+            or not isinstance(interval_s, Real)
+            or not math.isfinite(interval_s)
+            or interval_s <= 0
+        ):
             raise ValueError("interval_s must be a finite positive number.")
         if not isinstance(run_immediately, bool):
             raise ValueError("run_immediately must be a boolean.")
+
         with self._lock:
             if any(job.name == name for job in self.jobs):
                 raise ValueError(f"A job named '{name}' is already registered.")
+            now = time.time()
             job = Job(
-                name,
-                fn,
-                float(interval_s),
-                time.time() if run_immediately else time.time() + interval_s,
+                name=name,
+                fn=fn,
+                interval_s=float(interval_s),
+                next_run=now if run_immediately else now + float(interval_s),
             )
             self.jobs.append(job)
         return job
@@ -57,13 +68,13 @@ class Scheduler:
     def cancel_job(self, name: str) -> bool:
         """Remove a pending job. This does not interrupt a job already executing."""
         with self._lock:
-            for job in self.jobs:
+            for job in list(self.jobs):
                 if job.name == name:
                     self.jobs.remove(job)
                     return True
         return False
 
-    def run_pending(self):
+    def run_pending(self) -> None:
         now = time.time()
         with self._lock:
             jobs = list(self.jobs)
@@ -75,28 +86,34 @@ class Scheduler:
             self.log.info("scheduler: running job '%s'", job.name)
             try:
                 job.fn()
-            except Exception as exc:                    # one bad job must not kill the scheduler
+            except Exception as exc:  # one bad job must not kill the scheduler
                 self.log.error("job '%s' crashed: %s", job.name, exc)
             finally:
                 with self._lock:
-                    job.runs += 1
-                    job.running = False
-                    job.next_run = time.time() + job.interval_s
+                    if job in self.jobs:
+                        job.runs += 1
+                        job.running = False
+                        job.next_run = time.time() + job.interval_s
 
-    def run(self, max_cycles: int | None = None, tick_s: float = 0.5):
-        if (max_cycles is not None and (
+    def run(self, max_cycles: Optional[int] = None, tick_s: float = 0.5) -> None:
+        if max_cycles is not None and (
             isinstance(max_cycles, bool) or not isinstance(max_cycles, int) or max_cycles < 0
-        )):
+        ):
             raise ValueError("max_cycles must be a non-negative integer or None.")
-        if (isinstance(tick_s, bool) or not isinstance(tick_s, Real)
-                or not math.isfinite(tick_s) or tick_s < 0):
+        if (
+            isinstance(tick_s, bool)
+            or not isinstance(tick_s, Real)
+            or not math.isfinite(tick_s)
+            or tick_s < 0
+        ):
             raise ValueError("tick_s must be a finite non-negative number.")
+
         cycles = 0
         while not self._stop_event.is_set() and (max_cycles is None or cycles < max_cycles):
             self.run_pending()
             cycles += 1
             time.sleep(tick_s)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the scheduler loop after its current synchronous job finishes."""
         self._stop_event.set()

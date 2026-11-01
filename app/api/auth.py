@@ -55,6 +55,19 @@ def create_session(session_repo: SessionRepository, user_id: int, remember: bool
     return session_id
 
 
+def establish_dashboard_session(user_id: int, session_id: str, name: str, email: str, remember: bool) -> None:
+    """Replace the browser session and issue a CSRF token for dashboard actions."""
+    session.clear()
+    session["user_id"] = int(user_id)
+    session["session_id"] = session_id
+    session["user_name"] = name
+    session["user_email"] = email
+    # Session fixation protection requires clearing the old session.  Keep a
+    # fresh token afterwards so logout and all dashboard POSTs remain usable.
+    session["csrf_token"] = secrets.token_urlsafe(32)
+    session.permanent = remember
+
+
 def _oauth_settings(provider: str) -> dict | None:
     config = _config()
     providers = {
@@ -166,12 +179,9 @@ def oauth_callback(provider: str):
         if not user or not user["is_active"]:
             return redirect("/auth?oauth_error=account_unavailable")
         session_id = create_session(session_repo, user_id, remember=True)
-        session.clear()
-        session["user_id"] = user_id
-        session["session_id"] = session_id
-        session["user_name"] = user["name"]
-        session["user_email"] = user["email"]
-        session.permanent = True
+        establish_dashboard_session(
+            user_id, session_id, user["name"], user["email"], remember=True
+        )
         session_repo.delete_expired()
         return redirect("/")
     except (HTTPError, URLError, ValueError, json.JSONDecodeError) as exc:
@@ -213,11 +223,7 @@ def signup():
         return jsonify(error="An account with this email already exists"), 400
 
     session_id = create_session(session_repo, user_id, remember=False)
-    session.clear()
-    session["user_id"] = user_id
-    session["session_id"] = session_id
-    session["user_name"] = name
-    session["user_email"] = email
+    establish_dashboard_session(user_id, session_id, name, email, remember=False)
     return jsonify(
         message="Account created successfully",
         redirect="/",
@@ -259,12 +265,9 @@ def login():
         connection.commit()
 
     session_id = create_session(session_repo, int(user["id"]), remember=remember)
-    session.clear()
-    session["user_id"] = int(user["id"])
-    session["session_id"] = session_id
-    session["user_name"] = user["name"]
-    session["user_email"] = user["email"]
-    session.permanent = remember
+    establish_dashboard_session(
+        int(user["id"]), session_id, user["name"], user["email"], remember=remember
+    )
     session_repo.delete_expired()
     return jsonify(
         message="Login successful",

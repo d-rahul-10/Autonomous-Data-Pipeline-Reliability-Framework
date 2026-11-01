@@ -16,7 +16,7 @@ export function renderRisk(container, risks, tasks = []) {
       <div class="section-heading">
         <div>
           <h2>Risks</h2>
-          <p>Runs needing review.</p>
+        <p>Calibrated model and runtime signals.</p>
         </div>
         <span class="risk-tag">TOP 10</span>
       </div>
@@ -24,7 +24,7 @@ export function renderRisk(container, risks, tasks = []) {
       <div class="metric-grid risk-summary-grid">
         ${renderRiskSummary(riskList)}
       </div>
-      <p class="risk-guidance">Scores rank runs for review, not guarantees. New analyses use a learned task threshold; older saved results compare runtime with that task's average.</p>
+  <p class="risk-guidance">Priority scores combine model evidence with runtime above a learned task threshold. They rank runs for review; they are not failure probabilities or guarantees.</p>
 
       <article class="panel risk-panel">
         <div class="risk-list" id="risk-list">${renderRiskItems(riskList, taskAverages)}</div>
@@ -42,10 +42,10 @@ function renderRiskSummary(risks) {
     return threshold > 0 && Number(r.duration) > threshold;
   }).length;
   return [
-    ["Candidates ranked", number(risks.length), "Top model-scored runs"],
+    ["Candidates ranked", number(risks.length), "Top priority-scored runs"],
     ["High priority", number(high), "Score at or above 75%"],
     ["Above task baseline", number(aboveBaseline), "Runtime exceeds its available task reference"],
-    ["Highest score", percent(Math.max(...scores)), "Model review signal"],
+    ["Highest score", percent(Math.max(...scores)), "Calibrated review signal"],
   ].map(([label, value, caption]) => `
     <article class="metric-card risk-stat-card">
       <div class="metric-top">${escape(label)}</div>
@@ -90,11 +90,11 @@ function renderRiskItems(risks, taskAverages) {
           <div class="risk-baseline">
             Runtime <strong>${duration.toFixed(1)}s</strong><span>·</span>${escape(baseline)}
           </div>
-          <div class="risk-track" role="img" aria-label="Bottleneck score ${percent(score)}">
+          <div class="risk-track" role="img" aria-label="Risk priority score ${percent(score)}">
             <span style="width:${Math.round(score * 100)}%"></span>
           </div>
         </div>
-        <div class="risk-score"><strong>${percent(score)}</strong><span>model score</span></div>
+        <div class="risk-score"><strong>${percent(score)}</strong><span>priority score</span></div>
       </div>
     `;
   }).join("");

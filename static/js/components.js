@@ -103,7 +103,7 @@ function TextButton({ label, onClick, hidden = false, id }) {
  */
 function Notice({ title, message, type = "error", onDismiss }) {
   const el = document.createElement("div");
-  el.className = `notice notice-${type}`;
+  el.className = `notice notice-${type} entering`;
   el.setAttribute("role", "alert");
   el.setAttribute("aria-live", "polite");
   el.innerHTML = `
@@ -127,7 +127,7 @@ function Notice({ title, message, type = "error", onDismiss }) {
  */
 function Loader({ label = "Loading…" } = {}) {
   const el = document.createElement("div");
-  el.className = "loading-panel";
+  el.className = "loading-panel fade-in";
   el.setAttribute("aria-live", "polite");
   el.innerHTML = `
     <span class="loader" aria-hidden="true"></span>
