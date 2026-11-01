@@ -8,7 +8,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>PipelineIQ — Reliability dashboard</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20261026e') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20261030f') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='cyberpunk.css', v='20261026e') }}">
 </head>
 <body>
@@ -147,7 +147,7 @@
 
       <section class="loading-panel" id="loading-panel" aria-live="polite" hidden>
         <span class="loader" aria-hidden="true"></span>
-        <div><strong>Analyzing</strong><span>Large datasets may take a moment.</span></div>
+        <div><strong id="analysis-progress-title">Analyzing</strong><span id="analysis-progress-detail">Large datasets may take a moment.</span></div>
       </section>
 
       <section class="tab-empty-state" id="health-empty" hidden>
@@ -362,6 +362,6 @@
     </main>
   </div>
   <script src="{{ url_for('static', filename='vendor/gsap.min.js') }}" defer></script>
-  <script type="module" src="{{ url_for('static', filename='js/app.js', v='20261026b') }}" defer></script>
+  <script type="module" src="{{ url_for('static', filename='js/app.js', v='20261030f') }}" defer></script>
 </body>
 </html>

@@ -52,3 +52,10 @@ class ServiceUnavailableError(PipelineError):
 
     status_code = 503
     public_message = "The authentication service is temporarily unavailable."
+
+
+class AnalysisTimeoutError(PipelineError):
+    """Raised when a dashboard analysis exceeds its configured deadline."""
+
+    status_code = 504
+    public_message = "Analysis exceeded the configured time limit."

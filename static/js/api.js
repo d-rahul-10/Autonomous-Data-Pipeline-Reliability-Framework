@@ -86,6 +86,7 @@
  * @property {Object|null} result
  * @property {string|null} error
  * @property {string} started_at
+ * @property {string} deadline_at
  * @property {string|null} completed_at
  */
 
@@ -223,18 +224,20 @@ const Api = {
   check: () => get("/api/auth/check"),
 
   // Analysis
-  /** @param {File} file @returns {Promise<AnalysisPayload>} */
-  analyzeFile: (file) => {
+  /** Start analysis of an uploaded CSV. Async jobs return {job_id, status}. */
+  analyzeFile: (file, { async = false } = {}) => {
     const form = new FormData();
     form.append("file", file);
-    return postForm("/api/analyze", form);
+    if (async) form.append("async", "true");
+    return postForm("/api/analyze", form, async ? 120000 : 30000);
   },
 
-  /** @param {number} rows @returns {Promise<AnalysisPayload>} */
-  analyzeSample: (rows) => {
+  /** Start analysis of generated data. Async jobs return {job_id, status}. */
+  analyzeSample: (rows, { async = false } = {}) => {
     const form = new FormData();
     form.append("rows", String(rows));
-    return postForm("/api/analyze", form);
+    if (async) form.append("async", "true");
+    return postForm("/api/analyze", form, async ? 120000 : 30000);
   },
 
   /** @param {string} jobId @returns {Promise<AnalysisJob>} */

@@ -92,9 +92,18 @@ class AnalysisService:
             )
 
         if progress:
-            progress("detecting_failures", 40)
+            progress("detecting_failures", 30)
         detector = FailureDetector(active_cfg).fit_anomaly(clean)
-        detected = detector.detect(clean)
+        detected = detector.detect(
+            clean,
+            progress=(
+                lambda completed, total: progress(
+                    "detecting_failures", 35 + int(25 * completed / max(1, total))
+                )
+                if progress
+                else None
+            ),
+        )
         failures = detector.summarize(detected)
 
         if progress:
@@ -147,7 +156,7 @@ class AnalysisService:
             for indices in chunks
         ]
 
-        by_task = (
+        by_task_frame = (
             detected.groupby(task)
             .agg(runs=("failure_detected", "size"),
                  flagged=("failure_detected", "sum"),
@@ -155,8 +164,19 @@ class AnalysisService:
             .round(2)
             .reset_index()
             .rename(columns={task: "task"})
-            .to_dict("records")
         )
+        by_task_frame["failure_rate"] = (
+            by_task_frame["flagged"] / by_task_frame["runs"].clip(lower=1)
+        )
+        by_task_frame["health"] = np.select(
+            [
+                by_task_frame["failure_rate"] >= cfg.task_critical_failure_rate,
+                by_task_frame["failure_rate"] >= cfg.task_watch_failure_rate,
+            ],
+            ["critical", "watch"],
+            default="good",
+        )
+        by_task = by_task_frame.to_dict("records")
 
         risk = predictor.predict_risk(clean.tail(self.RISK_WINDOW)).nlargest(
             self.TOP_RISK_COUNT, "bottleneck_risk"
@@ -170,6 +190,8 @@ class AnalysisService:
                     float(predictor.task_thresholds.get(str(getattr(row, task)), 0)), 2
                 ),
                 "risk": round(float(row.bottleneck_risk), 3),
+                "model_probability": round(float(row.model_probability), 3),
+                "runtime_excess": round(float(row.runtime_excess), 3),
             }
             for row in risk.itertuples(index=False)
         ]

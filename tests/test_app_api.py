@@ -34,6 +34,7 @@ from app.db import init_db
 from app.repositories.schedule import ScheduleRepository
 from app.services.scheduler import SchedulerService
 from app.services.analysis import AnalysisService
+from app.services.jobs import AnalysisJobManager
 
 
 def _cleanup_test_environment():
@@ -80,6 +81,21 @@ class ApplicationApiTests(unittest.TestCase):
         self.client.get("/auth")
         with self.client.session_transaction() as auth_session:
             self.client.environ_base["HTTP_X_CSRF_TOKEN"] = auth_session["csrf_token"]
+
+    def test_auth_page_uses_the_maintained_assets_and_hides_alerts_initially(self):
+        response = self.client.get("/auth")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('class="auth-page"', page)
+        self.assertIn('name="csrf-token"', page)
+        self.assertIn('/static/auth.css', page)
+        self.assertIn('/static/auth.js', page)
+        self.assertIn('id="error-message" class="auth-message error" role="alert" hidden', page)
+
+        stylesheet = self.client.get("/static/auth.css")
+        self.assertEqual(stylesheet.status_code, 200)
+        self.assertIn('.auth-message[hidden] { display: none; }', stylesheet.get_data(as_text=True))
 
     def test_json_default_serializes_numpy_values_and_timestamps(self):
         payload = {
@@ -267,6 +283,14 @@ class ApplicationApiTests(unittest.TestCase):
         self.assertTrue(result["top_risk"])
         self.assertTrue(all("duration_threshold" in risk for risk in result["top_risk"]))
         self.assertTrue(all(0 <= risk["risk"] <= 1 for risk in result["top_risk"]))
+        self.assertTrue(all("model_probability" in risk for risk in result["top_risk"]))
+        self.assertTrue(all("runtime_excess" in risk for risk in result["top_risk"]))
+        self.assertEqual(sum(task["runs"] for task in result["by_task"]), result["rows_clean"])
+        self.assertTrue(all(
+            task["failure_rate"] == task["flagged"] / task["runs"]
+            and task["health"] in {"good", "watch", "critical"}
+            for task in result["by_task"]
+        ))
         self.assertTrue(result["report_file"].startswith("report_"))
         report_response = self.client.get("/api/reports/" + result["report_file"])
         try:
@@ -280,6 +304,64 @@ class ApplicationApiTests(unittest.TestCase):
             self.client.get("/api/status").get_json()["latest_analysis"]["generated_at"],
             result["generated_at"],
         )
+
+    def test_async_analysis_job_reports_progress_and_returns_dashboard_payload(self):
+        _authenticate_test_client(self.client)
+        started = self.client.post("/api/analyze", data={"rows": "1000", "async": "true"})
+
+        self.assertEqual(started.status_code, 202, started.get_json())
+        job_id = started.get_json()["job_id"]
+        job = None
+        for _ in range(40):
+            job = self.client.get(f"/api/analyze/jobs/{job_id}").get_json()
+            if job["status"] in {"completed", "failed"}:
+                break
+            time.sleep(0.25)
+
+        self.assertIsNotNone(job)
+        self.assertEqual(job["status"], "completed", job)
+        self.assertEqual(job["progress"], 100)
+        self.assertEqual(job["stage"], "done")
+        self.assertIn("performance", job["result"])
+        self.assertIn("by_task", job["result"])
+        self.assertIn("deadline_at", job)
+        self.assertNotIn("_deadline_monotonic", job)
+
+    def test_async_csv_validation_failure_is_returned_by_the_job(self):
+        _authenticate_test_client(self.client)
+        started = self.client.post(
+            "/api/analyze",
+            data={
+                "async": "true",
+                "file": (io.BytesIO(b"one,two\n1,2\n"), "invalid.csv"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(started.status_code, 202, started.get_json())
+
+        job_id = started.get_json()["job_id"]
+        job = None
+        for _ in range(20):
+            job = self.client.get(f"/api/analyze/jobs/{job_id}").get_json()
+            if job["status"] == "failed":
+                break
+            time.sleep(0.1)
+
+        self.assertIsNotNone(job)
+        self.assertEqual(job["status"], "failed", job)
+        self.assertIn("not in the ETL pipeline-log format", job["error"])
+
+    def test_job_manager_marks_expired_job_as_terminal_failure(self):
+        manager = AnalysisJobManager(Mock(), timeout_seconds=30)
+        job_id = manager.create()
+        with manager._lock:
+            manager._jobs[job_id]["_deadline_monotonic"] = time.monotonic() - 1
+
+        job = manager.get(job_id)
+
+        self.assertEqual(job["status"], "failed")
+        self.assertEqual(job["stage"], "timeout")
+        self.assertIn("processing limit", job["error"])
 
     def test_invalid_analysis_inputs_return_client_errors(self):
         _authenticate_test_client(self.client)

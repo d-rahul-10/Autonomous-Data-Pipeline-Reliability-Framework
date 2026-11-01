@@ -57,6 +57,7 @@ class AppConfig:
     max_sample_rows: int
     min_interval_seconds: int
     max_interval_seconds: int
+    analysis_timeout_seconds: int = 300
     google_client_id: str = ""
     google_client_secret: str = ""
     github_client_id: str = ""
@@ -103,6 +104,12 @@ class AppConfig:
             max_sample_rows=_env_int("MAX_SAMPLE_ROWS", 500_000, minimum=1000),
             min_interval_seconds=_env_int("MIN_INTERVAL_SECONDS", 15, minimum=1),
             max_interval_seconds=_env_int("MAX_INTERVAL_SECONDS", 604800, minimum=1),
+            # This is an end-to-end job deadline, not an HTTP request timeout.
+            # Long-running uploads therefore receive a terminal job response
+            # instead of leaving the dashboard polling forever.
+            analysis_timeout_seconds=_env_int(
+                "ANALYSIS_TIMEOUT_SECONDS", 300, minimum=30, maximum=3600
+            ),
             google_client_id=os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
             google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),
             github_client_id=os.environ.get("GITHUB_CLIENT_ID", "").strip(),

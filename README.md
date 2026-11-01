@@ -34,7 +34,7 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-Open [http://127.0.0.1:5000](http://127.0.0.1:5000) if the browser does not open automatically. The dashboard can analyze generated sample data or an uploaded CSV file. CSV uploads have a 500 MB request-size limit and no separate row-count cap; 500,000-row datasets are supported when they meet the schema below and the server has sufficient memory.
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000) if the browser does not open automatically. The dashboard can analyze generated sample data or an uploaded CSV file. CSV uploads have a 500 MB request-size limit and no separate row-count cap; 500,000-row datasets are supported when they meet the schema below and the server has sufficient memory. Dashboard analyses run as background jobs with phase/progress updates and a five-minute default deadline; set `ANALYSIS_TIMEOUT_SECONDS` (30–3600) to tune that limit.
 
 ## CSV format
 

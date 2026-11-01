@@ -252,6 +252,35 @@ td:first-child { color: #45546d; font-weight: 600; }
 .footer button:hover { color: #435dcf; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
+/* ---------- Interaction animations ---------- */
+.button:active { transform: translateY(0) scale(.97); }
+.button:active:disabled { transform: none; scale: 1; }
+.nav-item:active { transform: translateY(1px); }
+.icon-button:active { transform: scale(.92); }
+.file-picker:active,.sample-select:active { transform: translateY(1px); }
+
+.entering { animation: fade-up .32s ease-out both; }
+.fade-in { animation: fade-in .28s ease-out both; }
+.slide-up { animation: slide-up .3s ease-out both; }
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse-dot { 0%,100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+
+.notice { animation: fade-up .34s ease-out both; }
+.loading-panel { animation: fade-in .24s ease-out both; }
+
+/* Dialog / modal open/close */
+dialog[open] { animation: dialog-open .22s ease-out both; }
+dialog::backdrop { background: rgba(23,35,58,.35); backdrop-filter: blur(2px); }
+@keyframes dialog-open { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+
+/* Toast / transient feedback */
+.toast { position: fixed; inset: auto 20px 20px auto; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; background: var(--ink); color: var(--white); font-size: 12px; font-weight: 600; box-shadow: var(--shadow); animation: toast-slide .3s ease-out both; }
+@keyframes toast-slide { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
 @media (min-width: 1500px) {
   .main-content { padding-right: 64px; padding-left: 64px; }
   .metric-card { min-height: 150px; padding: 18px 19px; }
@@ -316,6 +345,9 @@ td:first-child { color: #45546d; font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .button:active,.nav-item:active,.icon-button:active,.file-picker:active,.sample-select:active { transform: none !important; }
+  .entering,.fade-in,.slide-up,.notice,.loading-panel,dialog[open],.toast { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .pulse-dot { animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
 .workspace-label { font-size: 11px; }
@@ -574,4 +606,44 @@ td { border-color: #dedacc; }
   .tab-empty-state h2 { font-size: 23px; }
   .tab-empty-state p { font-size: 15px; }
   .footer { font-size: 12px; }
+}
+
+/* ---------- Report-style motion and visual hierarchy ---------- */
+.report-reveal {
+  opacity: 0;
+  transform: translateY(14px) scale(.985);
+  transition: opacity .42s ease, transform .42s cubic-bezier(.2,.75,.25,1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.report-reveal.is-visible { opacity: 1; transform: translateY(0) scale(1); }
+.metric-card { position: relative; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.metric-card::after { position: absolute; right: -24px; bottom: -34px; width: 88px; height: 88px; border-radius: 50%; background: radial-gradient(circle,rgba(88,112,237,.14),transparent 69%); content: ""; pointer-events: none; }
+.metric-card:hover { border-color: #cbd5ff; box-shadow: 0 12px 26px rgba(51,70,126,.12); transform: translateY(-3px); }
+.panel { transition: box-shadow .22s ease, border-color .22s ease; }
+.panel:hover { border-color: #dce4ff; box-shadow: 0 10px 24px rgba(51,70,126,.09); }
+
+/* Charts animate from their true SVG geometry; no values are fabricated. */
+.chart-wrap svg { overflow: visible; }
+.chart-line { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: chart-line-in 1.05s cubic-bezier(.3,.75,.25,1) .15s forwards; }
+.chart-area-reveal { opacity: 0; animation: chart-area-in .7s ease .45s forwards; }
+.chart-bar { transform-box: fill-box; transform-origin: center bottom; animation: chart-bar-in .48s cubic-bezier(.2,.8,.25,1) both; animation-delay: var(--bar-delay, 90ms); }
+.chart-point { opacity: 0; animation: chart-point-in .24s ease .72s forwards; }
+.task-rate-track i,.risk-track span,.meter span { transform: scaleX(0); transform-origin: left center; transition: transform .72s cubic-bezier(.2,.8,.25,1); }
+.report-reveal.is-visible .task-rate-track i,.report-reveal.is-visible .risk-track span,.report-reveal.is-visible .meter span { transform: scaleX(1); }
+.quality-ring { background: conic-gradient(var(--ring-color,#34b88c) var(--ring-target,0%),#edf1f4 0); animation: ring-in .55s cubic-bezier(.2,.8,.25,1) both; }
+.risk-item { transition: background .18s ease, transform .18s ease; }
+.risk-item:hover { background: #f7f9ff; transform: translateX(4px); }
+.nav-item.active { box-shadow: inset 3px 0 0 currentColor; }
+
+@keyframes chart-line-in { to { stroke-dashoffset: 0; } }
+@keyframes chart-area-in { to { opacity: 1; } }
+@keyframes chart-bar-in { from { opacity: 0; transform: scaleY(.05); } to { opacity: 1; transform: scaleY(1); } }
+@keyframes chart-point-in { to { opacity: 1; } }
+@keyframes ring-in { from { opacity: .25; transform: scale(.8) rotate(-35deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .report-reveal,.report-reveal.is-visible { opacity: 1; transform: none; transition: none; }
+  .chart-line,.chart-area-reveal,.chart-bar,.chart-point,.quality-ring { animation: none; opacity: 1; transform: none; }
+  .task-rate-track i,.risk-track span,.meter span { transform: scaleX(1); transition: none; }
+  .metric-card:hover,.risk-item:hover { transform: none; }
 }

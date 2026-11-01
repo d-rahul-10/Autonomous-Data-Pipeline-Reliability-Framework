@@ -1,4 +1,9 @@
 """Shared core pipeline logic used by both CLI and web API."""
+
+from __future__ import annotations
+
+from typing import Union
+
 import pandas as pd
 
 from config import Config
@@ -32,7 +37,7 @@ def build_config() -> Config:
 
 
 def _read_pipeline_csv(
-    source,
+    source: Union[str, object],
     cfg: Config,
     check_clean_rows: bool = True,
 ) -> pd.DataFrame:
@@ -44,7 +49,7 @@ def _read_pipeline_csv(
         check_clean_rows: If True, validate minimum clean row count (200).
 
     Returns:
-        Cleaned DataFrame with required columns and parsed timestamps.
+        DataFrame with required columns and parsed timestamps.
 
     Raises:
         ValueError: If CSV is missing required columns or has too few clean rows.

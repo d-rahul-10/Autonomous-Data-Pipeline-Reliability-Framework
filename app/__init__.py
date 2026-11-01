@@ -11,19 +11,20 @@ Creates the Flask application with clean layering:
 Exposes `app` (the Flask instance) and `json_default` for backwards
 compatibility with existing tests and WSGI entry points.
 """
+
 from __future__ import annotations
 
 import json
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import Any, Callable, List
 
-from flask import Flask, jsonify
+from flask import Flask
 
+from airflow_integration import AirflowRecoveryService, AirflowSettings
 from app.api import register_blueprints
-from app.config import AppConfig, BASE_DIR
+from app.config import BASE_DIR, AppConfig
 from app.db import init_db
-from app.exceptions import PipelineError
 from app.middleware import init_middleware
 from app.repositories.analysis_history import AnalysisHistoryRepository
 from app.repositories.schedule import ScheduleRepository
@@ -32,13 +33,14 @@ from app.repositories.users import UserRepository
 from app.services.analysis import AnalysisService, json_default
 from app.services.jobs import AnalysisJobManager
 from app.services.scheduler import SchedulerService
-from airflow_integration import AirflowRecoveryService, AirflowSettings
 
 __all__ = ["create_app", "app", "json_default", "_json_default", "get_config"]
 
 
-def _load_analysis_history(app: Flask, history_repository: AnalysisHistoryRepository, limit: int) -> list:
-    history = []
+def _load_analysis_history(
+    app: Flask, history_repository: AnalysisHistoryRepository, limit: int
+) -> List[dict]:
+    history: List[dict] = []
     for row in history_repository.recent(limit=limit):
         try:
             history.append(json.loads(row["payload"]))
@@ -47,31 +49,35 @@ def _load_analysis_history(app: Flask, history_repository: AnalysisHistoryReposi
     return history
 
 
-def _start_airflow_recovery_worker(app: Flask, settings: AirflowSettings, recovery: AirflowRecoveryService) -> None:
+def _start_airflow_recovery_worker(
+    app: Flask, settings: AirflowSettings, recovery: AirflowRecoveryService
+) -> None:
     if not settings.ready_for_automation:
         return
     stop = app.config["AIRFLOW_WORKER_STOP"]
     thread = app.config.get("AIRFLOW_WORKER_THREAD")
-    if thread is None or not thread.is_alive():
-        stop.clear()
+    if thread is not None and thread.is_alive():
+        return
+    stop.clear()
 
-        def loop():
-            while not stop.is_set():
-                try:
-                    events = recovery.recover_once()
-                    for event in events:
-                        app.logger.warning(
-                            "Airflow recovery requested for dag=%s task=%s run=%s",
-                            event.get("dag_id"), event.get("task_id"), event.get("dag_run_id"),
-                        )
-                except Exception:  # noqa: BLE001 - background worker boundary
-                    app.logger.exception("Airflow recovery poll failed")
-                stop.wait(settings.poll_seconds)
+    def loop() -> None:
+        while not stop.is_set():
+            try:
+                events = recovery.recover_once()
+                for event in events:
+                    app.logger.warning(
+                        "Airflow recovery requested for dag=%s task=%s run=%s",
+                        event.get("dag_id"),
+                        event.get("task_id"),
+                        event.get("dag_run_id"),
+                    )
+            except Exception:  # noqa: BLE001 - background worker boundary
+                app.logger.exception("Airflow recovery poll failed")
+            stop.wait(settings.poll_seconds)
 
-        app.config["AIRFLOW_WORKER_THREAD"] = threading.Thread(
-            target=loop, name="airflow-recovery", daemon=True
-        )
-        app.config["AIRFLOW_WORKER_THREAD"].start()
+    worker = threading.Thread(target=loop, name="airflow-recovery", daemon=True)
+    app.config["AIRFLOW_WORKER_THREAD"] = worker
+    worker.start()
 
 
 def create_app(config: AppConfig | None = None) -> Flask:
@@ -92,32 +98,34 @@ def create_app(config: AppConfig | None = None) -> Flask:
     app.config["AIRFLOW_WORKER_STOP"] = threading.Event()
     app.config["AIRFLOW_WORKER_THREAD"] = None
 
-    # ---- database + schema ----
+    # database + schema
     init_db(config)
 
-    # ---- repositories ----
+    # repositories
     user_repository = UserRepository(config)
     session_repository = SessionRepository(config)
     schedule_repository = ScheduleRepository(config)
     history_repository = AnalysisHistoryRepository(config)
 
-    # ---- in-memory analysis history (bounded cache) ----
-    analysis_history = _load_analysis_history(
-        app, history_repository, config.analysis_history_limit
-    )
+    # in-memory analysis history (bounded cache)
+    analysis_history = _load_analysis_history(app, history_repository, config.analysis_history_limit)
 
     def _history_sink(payload: dict) -> None:
         analysis_history.insert(0, payload)
-        del analysis_history[config.analysis_history_limit:]
+        if len(analysis_history) > config.analysis_history_limit:
+            del analysis_history[config.analysis_history_limit :]
 
-    # ---- services ----
+    # services
     analysis_service = AnalysisService(
         history_repository=history_repository,
         min_clean_rows=config.min_clean_rows,
         history_sink=_history_sink,
     )
     job_manager = AnalysisJobManager(
-        analysis_service, max_age_hours=24, analysis_lock=app.config["ANALYSIS_LOCK"]
+        analysis_service,
+        max_age_hours=24,
+        analysis_lock=app.config["ANALYSIS_LOCK"],
+        timeout_seconds=config.analysis_timeout_seconds,
     )
     scheduler_service = SchedulerService(
         config=config,
@@ -133,11 +141,11 @@ def create_app(config: AppConfig | None = None) -> Flask:
     app.config["HISTORY_REPOSITORY"] = history_repository
     app.config["ANALYSIS_HISTORY"] = analysis_history
 
-    # ---- blueprints + middleware ----
+    # blueprints + middleware
     register_blueprints(app)
     init_middleware(app, config)
 
-    # ---- persisted schedule + background workers ----
+    # persisted schedule + background workers
     scheduler_service.load_persisted()
     settings = AirflowSettings.from_env()
     recovery = AirflowRecoveryService(settings)
@@ -159,5 +167,5 @@ def get_config() -> AppConfig:
 _json_default = json_default
 
 
-def _iso_now():
+def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")

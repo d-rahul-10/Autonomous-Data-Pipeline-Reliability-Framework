@@ -90,7 +90,7 @@ export function renderTimelineChart(points) {
       <text class="chart-axis-title" x="${padding.left}" y="13">AVG RUNTIME · SECONDS</text>
       <text class="chart-axis-title" x="${width - padding.right}" y="13" text-anchor="end">FLAGGED RUNS</text>
       ${grid}${bars}
-      <path class="chart-area" d="${areaPath}" style="fill:url(#timelineChartFill)"></path>
+      <path class="chart-area chart-area-reveal" d="${areaPath}" style="fill:url(#timelineChartFill)"></path>
       <path class="chart-line" d="${path}"></path>
       ${markers}
       ${labels}
@@ -113,14 +113,14 @@ export function renderTaskRateChart(tasks) {
     return '<div class="empty-row">Task-level results will appear after analysis.</div>';
   }
 
-  const maxRate = Math.max(...topTasks.map((t) => t.rate), 0.01);
-
   return topTasks.map((task) => {
-    const health = task.rate > 0.15 ? "critical" : task.rate > 0.05 ? "watch" : "good";
+    const health = ["good", "watch", "critical"].includes(task.health)
+      ? task.health
+      : task.rate >= 0.15 ? "critical" : task.rate >= 0.05 ? "watch" : "good";
     return `
       <div class="task-rate-row">
         <span class="task-rate-name" title="${escape(task.task)}">${escape(task.task)}</span>
-        <span class="task-rate-track"><i class="${health}" style="width:${Math.max(task.rate ? 2 : 0, task.rate / maxRate * 100)}%"></i></span>
+        <span class="task-rate-track" aria-label="${Number(task.rate * 100).toFixed(1)} percent flagged"><i class="${health}" style="width:${Math.min(100, task.rate * 100)}%"></i></span>
         <strong>${Number(task.rate * 100).toFixed(1)}%</strong>
         <small>${number(task.flagged)} / ${number(task.runs)} flagged</small>
       </div>

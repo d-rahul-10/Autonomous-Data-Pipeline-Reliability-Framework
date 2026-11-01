@@ -74,7 +74,12 @@ def index():
 def auth_page():
     if "user_id" in session:
         return redirect("/")
-    return render_template("auth.html")
+    response = make_response(render_template("auth.html"))
+    # The form contains a session-bound CSRF token.  Do not let the browser
+    # restore a stale sign-in page after logout and submit its old token.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @monitoring_bp.get("/login")

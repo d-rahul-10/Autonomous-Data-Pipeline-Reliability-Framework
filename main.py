@@ -4,14 +4,17 @@ Usage:
     python main.py                       # synthetic data
     python main.py --data logs.csv       # your ETL Logs Anomaly Dataset (edit config.py column names)
 """
+
+from __future__ import annotations
+
 import argparse
 import random
+from typing import Any, Dict
 
 import pandas as pd
 
 from bottleneck_predictor import BottleneckPredictor
 from config import Config
-from csv_input import read_csv_table
 from data_quality import DataQualityValidator
 from failure_detector import FailureDetector
 from logging_utils import get_logger
@@ -33,26 +36,30 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def demo_live_pipeline(cfg: Config) -> dict:
+def demo_live_pipeline(cfg: Config) -> Dict[str, Any]:
     """Simulated ETL with flaky tasks to demonstrate monitoring + automatic recovery."""
     monitor = PipelineMonitor(cfg.task_timeout_s, cfg.log_file)
     rm = RecoveryManager(monitor, cfg)
     state = {"conn_ok": False, "file_ready": False}
 
-    def reconnect(_exc): state["conn_ok"] = True
-    def recreate_file(_exc): state["file_ready"] = True
+    def reconnect(_exc: Exception) -> None:
+        state["conn_ok"] = True
+
+    def recreate_file(_exc: Exception) -> None:
+        state["file_ready"] = True
+
     rm.register_action(ConnectionError, reconnect)
     rm.register_action(FileNotFoundError, recreate_file)
 
-    def extract():
+    def extract() -> list:
         if not state["file_ready"]:
             raise FileNotFoundError("source file missing")
         return list(range(100))
 
-    def transform(rows):
+    def transform(rows: list) -> list:
         return [r * 2 for r in rows]
 
-    def load(rows):
+    def load(rows: list) -> int:
         if not state["conn_ok"]:
             raise ConnectionError("warehouse unreachable")
         return len(rows)
@@ -62,18 +69,22 @@ def demo_live_pipeline(cfg: Config) -> dict:
     loaded = rm.execute("load", load, rows)
     records = monitor.to_frame().astype(object)
     records = records.where(pd.notna(records), None)
-    return {"rows_loaded": loaded, "monitor": monitor.summary(), "recovery": rm.stats,
-            "records": records.to_dict("records")}
+    return {
+        "rows_loaded": loaded,
+        "monitor": monitor.summary(),
+        "recovery": rm.stats,
+        "records": records.to_dict("records"),
+    }
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data", help="CSV of ETL logs")
     ap.add_argument("--rows", type=_positive_int, default=50_000)
     args = ap.parse_args()
 
     cfg = build_config()
-    cfg.backoff_base_s = 0.1                      # fast demo
+    cfg.backoff_base_s = 0.1  # fast demo
 
     if args.data:
         try:
@@ -82,21 +93,25 @@ def main():
             ap.error(f"Could not load pipeline CSV: {exc}")
     else:
         df = generate_logs(args.rows)
+
     clean = DataQualityValidator(cfg).clean(df)
     if len(clean) < 200:
         ap.error("Too few valid rows after cleaning (need at least 200).")
 
     log = get_logger("main", cfg.log_file)
     reporter = Reporter(cfg)
-    report = {}
+    report: Dict[str, Any] = {}
     log.info("loaded %d log records", len(df))
 
     # 1. Data quality
     dq = DataQualityValidator(cfg)
     dq_report = dq.validate(df)
-    report["data_quality"] = {"rows": dq_report["rows"], "passed": dq_report["passed"],
-                              "critical_failure": dq_report["critical_failure"],
-                              "issues": dq_report["issues"]}
+    report["data_quality"] = {
+        "rows": dq_report["rows"],
+        "passed": dq_report["passed"],
+        "critical_failure": dq_report["critical_failure"],
+        "issues": dq_report["issues"],
+    }
     log.info("cleaned: %d -> %d rows", len(df), len(clean))
 
     # 2. Failure detection
@@ -110,11 +125,12 @@ def main():
     bp.save()
     report["bottleneck_prediction"] = {k: v for k, v in metrics.items() if k != "report"}
     top = bp.predict_risk(clean.tail(2000)).nlargest(5, "bottleneck_risk")[
-        [cfg.col_timestamp, cfg.col_task, "bottleneck_risk"]]
+        [cfg.col_timestamp, cfg.col_task, "bottleneck_risk"]
+    ]
     report["top_risk_runs"] = top.to_dict("records")
 
     # 4. Live pipeline w/ recovery, run through the scheduler
-    results = {}
+    results: Dict[str, Any] = {}
     sched = Scheduler(cfg.log_file)
     sched.add_job("etl_run", lambda: results.update(demo_live_pipeline(cfg)), interval_s=60)
     sched.run(max_cycles=1, tick_s=0.1)
@@ -124,7 +140,8 @@ def main():
     log.info("reports written: %s, %s", jpath, mpath)
     print("\n=== SUMMARY ===")
     for k in ("failure_detection", "bottleneck_prediction", "live_pipeline"):
-        print(k, "->", {a: b for a, b in report[k].items() if a != "feature_importance"})
+        if k in report and isinstance(report[k], dict):
+            print(k, "->", {a: b for a, b in report[k].items() if a != "feature_importance"})
 
 
 if __name__ == "__main__":

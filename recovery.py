@@ -1,12 +1,15 @@
 """Automatic recovery: classify errors, apply corrective actions, retry with exponential backoff."""
+
+from __future__ import annotations
+
 import time
 from math import isfinite
 from numbers import Real
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from config import Config
-from monitor import PipelineMonitor, TaskTimeoutError
 from logging_utils import get_logger
+from monitor import PipelineMonitor, TaskTimeoutError
 
 # Errors that retrying cannot fix (bad data / code bugs) - escalate immediately.
 class SchemaViolation(Exception):
@@ -18,27 +21,45 @@ RECOVERABLE = (ConnectionError, TimeoutError, FileNotFoundError, OSError)
 
 
 class RecoveryManager:
-    def __init__(self, monitor: PipelineMonitor, cfg: Config | None = None):
+    """Manage retries, backoff, corrective actions, and fallbacks."""
+
+    def __init__(self, monitor: PipelineMonitor, cfg: Config | None = None) -> None:
         self.monitor = monitor
         self.cfg = cfg or Config()
-        if (isinstance(self.cfg.max_retries, bool) or not isinstance(self.cfg.max_retries, int)
-                or self.cfg.max_retries < 0):
+        if (
+            isinstance(self.cfg.max_retries, bool)
+            or not isinstance(self.cfg.max_retries, int)
+            or self.cfg.max_retries < 0
+        ):
             raise ValueError("max_retries must be a non-negative integer.")
-        if (isinstance(self.cfg.backoff_base_s, bool) or not isinstance(self.cfg.backoff_base_s, Real)
-                or not isfinite(self.cfg.backoff_base_s) or self.cfg.backoff_base_s < 0):
+        if (
+            isinstance(self.cfg.backoff_base_s, bool)
+            or not isinstance(self.cfg.backoff_base_s, Real)
+            or not isfinite(self.cfg.backoff_base_s)
+            or self.cfg.backoff_base_s < 0
+        ):
             raise ValueError("backoff_base_s must be a finite non-negative number.")
-        if (isinstance(self.cfg.backoff_factor, bool) or not isinstance(self.cfg.backoff_factor, Real)
-                or not isfinite(self.cfg.backoff_factor) or self.cfg.backoff_factor < 1):
+        if (
+            isinstance(self.cfg.backoff_factor, bool)
+            or not isinstance(self.cfg.backoff_factor, Real)
+            or not isfinite(self.cfg.backoff_factor)
+            or self.cfg.backoff_factor < 1
+        ):
             raise ValueError("backoff_factor must be a finite number greater than or equal to 1.")
         self.log = get_logger("recovery", self.cfg.log_file)
-        self.actions: dict[type, Callable[[Exception], None]] = {}
-        self.stats = {"recovered": 0, "exhausted": 0, "non_recoverable": 0, "clean_first_try": 0}
+        self.actions: Dict[type, Callable[[Exception], None]] = {}
+        self.stats: Dict[str, int] = {
+            "recovered": 0,
+            "exhausted": 0,
+            "non_recoverable": 0,
+            "clean_first_try": 0,
+        }
 
-    def register_action(self, exc_type: type, action: Callable[[Exception], None]):
+    def register_action(self, exc_type: type, action: Callable[[Exception], None]) -> None:
         """Register a corrective action, e.g. reconnect DB for ConnectionError."""
         self.actions[exc_type] = action
 
-    def _corrective(self, exc: Exception):
+    def _corrective(self, exc: Exception) -> None:
         for exc_type, action in self.actions.items():
             if isinstance(exc, exc_type):
                 self.log.warning("applying corrective action '%s' for %s", action.__name__, type(exc).__name__)
@@ -52,14 +73,15 @@ class RecoveryManager:
         self,
         name: str,
         fn: Callable,
-        *args,
-        fallback: Optional[Callable] = None,
+        *args: Any,
+        fallback: Optional[Callable[[], Any]] = None,
         allow_timeout_retry: bool = False,
         cooperative_cancel: bool = False,
-        **kwargs,
-    ):
-        last_exc = None
-        for attempt in range(1, self.cfg.max_retries + 2):
+        **kwargs: Any,
+    ) -> Any:
+        last_exc: Optional[Exception] = None
+        max_attempts = self.cfg.max_retries + 2
+        for attempt in range(1, max_attempts):
             try:
                 result = self.monitor.run_task(
                     name,
@@ -70,8 +92,10 @@ class RecoveryManager:
                     allow_concurrent=allow_timeout_retry,
                     **kwargs,
                 )
-                self.stats["clean_first_try" if attempt == 1 else "recovered"] += 1
-                if attempt > 1:
+                if attempt == 1:
+                    self.stats["clean_first_try"] += 1
+                else:
+                    self.stats["recovered"] += 1
                     self.log.info("task=%s RECOVERED after %d attempts", name, attempt)
                 return result
             except TaskTimeoutError as exc:
@@ -86,8 +110,13 @@ class RecoveryManager:
                 if attempt > self.cfg.max_retries:
                     break
                 delay = self.cfg.backoff_base_s * (self.cfg.backoff_factor ** (attempt - 1))
-                self.log.warning("task=%s timed out; explicitly permitted retry %d/%d in %.2fs",
-                                 name, attempt, self.cfg.max_retries, delay)
+                self.log.warning(
+                    "task=%s timed out; explicitly permitted retry %d/%d in %.2fs",
+                    name,
+                    attempt,
+                    self.cfg.max_retries,
+                    delay,
+                )
                 time.sleep(delay)
             except NON_RECOVERABLE as exc:
                 self.stats["non_recoverable"] += 1
@@ -99,11 +128,16 @@ class RecoveryManager:
                     break
                 self._corrective(exc)
                 delay = self.cfg.backoff_base_s * (self.cfg.backoff_factor ** (attempt - 1))
-                self.log.warning("task=%s retry %d/%d in %.2fs", name, attempt, self.cfg.max_retries, delay)
+                self.log.warning(
+                    "task=%s retry %d/%d in %.2fs", name, attempt, self.cfg.max_retries, delay
+                )
                 time.sleep(delay)
+
         self.stats["exhausted"] += 1
         self.log.error("task=%s retries exhausted", name)
-        if fallback:
+        if fallback is not None:
             self.log.warning("task=%s running fallback", name)
             return fallback()
-        raise last_exc
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"task={name} failed without exception")
